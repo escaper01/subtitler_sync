@@ -3,5 +3,5 @@
 /* Tailwind v4 scans source files automatically, but the panel's classes live in files it
    would otherwise have to guess at, so be explicit. */
 @source '../panel';
-@source '../debug';
+@source '../popup';
 @source '../content';

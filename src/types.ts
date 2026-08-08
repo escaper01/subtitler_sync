@@ -84,98 +84,38 @@ export interface SubtitleStyle {
   anchorTo: AnchorTo;
 }
 
-/* ------------------------------------------------------------------ diagnostics */
+/* ---------------------------------------------------------------------- tabs */
 
-/** A single `<video>` as seen by the content script, for the debug frame tree. */
-export interface VideoReport {
-  /** Stable per-frame id we assign, so a video can be referred to across messages. */
-  id: string;
-  /** Truncated and scheme-tagged; a blob: URL is meaningless outside its frame anyway. */
-  src: string;
-  readyState: number;
-  duration: number;
-  currentTime: number;
-  paused: boolean;
-  muted: boolean;
-  videoWidth: number;
-  videoHeight: number;
-  rect: { x: number; y: number; w: number; h: number };
-  /** Whether this is the video the extension attached its overlay to. */
-  active: boolean;
-  /** If rejected by the detection heuristics, why. */
-  rejectedReason?: string;
+/**
+ * What the background knows about a tab, so the popup can say something useful about the
+ * page you are looking at without talking to its frames.
+ */
+export interface TabState {
+  /** A video long enough to be a film exists in some frame of this tab. */
+  videoSeen: boolean;
+  /** The overlay is attached to it — i.e. the extension is actually running here. */
+  videoAttached: boolean;
 }
 
-/** One frame's self-report, sent to the background for the debug frame tree. */
-export interface FrameReport {
-  frameId: number;
-  parentFrameId: number;
-  url: string;
-  origin: string;
-  isTop: boolean;
-  /** True when this frame hosts the panel UI. */
-  hasPanel: boolean;
-  videos: VideoReport[];
-  updatedAt: number;
-}
+export const EMPTY_TAB_STATE: TabState = { videoSeen: false, videoAttached: false };
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-
-export interface LogEvent {
-  t: number;
-  level: LogLevel;
-  /** Subsystem, e.g. 'detect', 'overlay', 'sync', 'panel', 'bg'. */
-  scope: string;
-  message: string;
-  data?: unknown;
-  frameId?: number;
-}
-
-export interface NetEntry {
-  id: string;
-  t: number;
-  method: string;
-  /** chrome.webRequest ResourceType, e.g. 'xmlhttprequest', 'media'. */
-  type: string;
-  url: string;
-  frameId: number;
-  tabId: number;
-  status?: number;
-  error?: string;
-  /** True when the URL looks like streaming media (m3u8/ts/mp4/mpd/key). */
-  media: boolean;
-}
 
 /* -------------------------------------------------------------------- messages */
 
 /** content script → background */
 export type ToBackground =
-  | { kind: 'frame-report'; report: Omit<FrameReport, 'frameId' | 'parentFrameId'> }
-  | { kind: 'video-detected'; video: VideoReport }
-  | { kind: 'log'; events: LogEvent[] }
-  | { kind: 'open-debug' };
+  | { kind: 'video-seen' }
+  | { kind: 'video-detected' }
+  /** Fallback for a frame whose ancestor chain is opaque; answers with the tab's URL. */
+  | { kind: 'get-top-url' };
 
 /** background → content script */
-export type ToContent =
-  | { kind: 'toggle-panel' }
-  | { kind: 'request-report' };
+export type ToContent = { kind: 'toggle-panel' };
 
-/** debug page → background */
-export type ToBackgroundFromDebug =
-  | { kind: 'debug:get-snapshot'; tabId?: number }
-  | { kind: 'debug:clear' }
-  | { kind: 'debug:list-tabs' };
+/** popup → background */
+export type ToBackgroundFromPopup =
+  | { kind: 'popup:get-tab-state'; tabId: number }
+  | { kind: 'popup:toggle-panel'; tabId: number };
 
-export interface DebugSnapshot {
-  version: string;
-  generatedAt: number;
-  tabId: number | null;
-  tabUrl: string | null;
-  frames: FrameReport[];
-  /** Frames known to Chrome but which never checked in (script failed to inject). */
-  silentFrames: { frameId: number; parentFrameId: number; url: string }[];
-  events: LogEvent[];
-  net: NetEntry[];
-}
-
-export type AnyMessage = ToBackground | ToContent | ToBackgroundFromDebug;
+export type AnyMessage = ToBackground | ToContent | ToBackgroundFromPopup;

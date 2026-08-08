@@ -3,11 +3,11 @@ import type { SubtitleOverlay } from '@/content/overlay';
 import { usePanel } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
 import { toCueTime } from '@/lib/sync';
-import { sendToBackground } from '@/lib/messaging';
-import { Banner, Button, clock } from '@/panel/components/ui';
+import { Banner, clock } from '@/panel/components/ui';
 import { SubtitlesTab } from '@/panel/components/SubtitlesTab';
 import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
+import { SitesTab } from '@/panel/components/SitesTab';
 
 /** How often the panel samples playback position. Enough for a smooth highlight. */
 const TICK_MS = 120;
@@ -16,6 +16,7 @@ const TABS = [
   { id: 'subtitles', label: 'Subtitles' },
   { id: 'sync', label: 'Sync' },
   { id: 'style', label: 'Style' },
+  { id: 'sites', label: 'Sites' },
 ] as const;
 
 export function App({ video, overlay }: { video: HTMLVideoElement; overlay: SubtitleOverlay }) {
@@ -159,18 +160,15 @@ function Panel() {
         {prefs.tab === 'subtitles' && <SubtitlesTab />}
         {prefs.tab === 'sync' && <SyncTab />}
         {prefs.tab === 'style' && <StyleTab />}
+        {prefs.tab === 'sites' && <SitesTab />}
       </div>
 
       <footer className="flex items-center gap-2 border-t border-white/10 px-2.5 py-1.5">
         <span className="text-[10px] text-white/30">
           <kbd className="text-white/50">S</kbd> sync · <kbd className="text-white/50">G</kbd>/
-          <kbd className="text-white/50">H</kbd> nudge
+          <kbd className="text-white/50">H</kbd> nudge ·{' '}
+          <kbd className="text-white/50">Shift+S</kbd> hide
         </span>
-        <div className="ml-auto">
-          <Button size="sm" variant="ghost" onClick={() => sendToBackground({ kind: 'open-debug' })}>
-            Debug
-          </Button>
-        </div>
       </footer>
     </div>
   );

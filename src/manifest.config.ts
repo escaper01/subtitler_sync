@@ -7,9 +7,22 @@ export default defineManifest({
   version: pkg.version,
   description: pkg.description,
 
-  // The action button toggles the in-page panel; see background/index.ts.
+  icons: {
+    16: 'icons/icon16.png',
+    32: 'icons/icon32.png',
+    48: 'icons/icon48.png',
+    128: 'icons/icon128.png',
+  },
+
+  // The action opens the popup, which is where sites are allowed. It has to be reachable
+  // on a page the extension is *not* running on, so it cannot live in the in-page panel.
   action: {
-    default_title: 'Subtitler — toggle panel',
+    default_title: 'Subtitler',
+    default_popup: 'src/popup/popup.html',
+    default_icon: {
+      16: 'icons/icon16.png',
+      32: 'icons/icon32.png',
+    },
   },
 
   background: {
@@ -19,9 +32,11 @@ export default defineManifest({
 
   content_scripts: [
     {
-      // Both the site domain (hdfilme.win/.best/...) and the embed host
-      // (dr0pstream.com, dropcdn.io, ...) rotate, so neither can be hardcoded.
-      // See src/hosts.ts for the known set and the rationale in CLAUDE.md.
+      // Injected everywhere, then gated at runtime against the user's allowlist — which is
+      // checked against the *top* page's host, not the frame's. An allowlist expressed as
+      // `matches` could not work: the film plays inside a cross-origin embed iframe whose
+      // domain rotates and is not the domain anybody would think to allow.
+      // See src/lib/sites.ts and CLAUDE.md.
       matches: ['<all_urls>'],
       all_frames: true,
       match_about_blank: true,
@@ -30,17 +45,13 @@ export default defineManifest({
     },
   ],
 
-  permissions: ['storage', 'webRequest', 'webNavigation', 'tabs', 'scripting'],
+  permissions: ['storage', 'tabs'],
   host_permissions: ['<all_urls>'],
 
   commands: {
     'toggle-panel': {
       suggested_key: { default: 'Alt+Shift+S' },
       description: 'Toggle the Subtitler panel',
-    },
-    'open-debug': {
-      suggested_key: { default: 'Alt+Shift+D' },
-      description: 'Open the Subtitler debug window',
     },
   },
 });

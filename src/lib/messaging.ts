@@ -1,4 +1,4 @@
-import type { ToBackground, ToBackgroundFromDebug, ToContent } from '@/types';
+import type { ToBackground, ToBackgroundFromPopup, ToContent } from '@/types';
 import { contextAlive } from '@/lib/log';
 
 /**
@@ -34,7 +34,7 @@ export function sendToBackground(message: ToBackground): void {
 
 /** Request/response against the service worker. Resolves to null if it could not be reached. */
 export async function askBackground<T>(
-  message: ToBackground | ToBackgroundFromDebug,
+  message: ToBackground | ToBackgroundFromPopup,
 ): Promise<T | null> {
   if (!contextAlive()) return null;
   try {
@@ -42,19 +42,6 @@ export async function askBackground<T>(
   } catch (err) {
     if (!isExpectedDisconnect(err)) console.error('[subtitler] askBackground', err);
     return null;
-  }
-}
-
-/** Send to one specific frame of one specific tab. Background-only. */
-export async function sendToFrame(
-  tabId: number,
-  frameId: number,
-  message: ToContent,
-): Promise<void> {
-  try {
-    await chrome.tabs.sendMessage(tabId, message, { frameId });
-  } catch (err) {
-    if (!isExpectedDisconnect(err)) console.error('[subtitler] sendToFrame', err);
   }
 }
 

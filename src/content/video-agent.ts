@@ -1,4 +1,3 @@
-import type { VideoReport } from '@/types';
 import { log } from '@/lib/log';
 
 /**
@@ -30,6 +29,7 @@ export type RejectReason =
   | 'not-rendered'
   | 'smaller-candidate';
 
+/** Why a candidate was passed over. Only ever surfaces in the console log. */
 const REJECT_TEXT: Record<RejectReason, string> = {
   'metadata-pending': 'waiting for metadata (duration unknown)',
   'too-short': `duration below ${MIN_DURATION_S}s — looks like an ad or preroll`,
@@ -74,9 +74,9 @@ export interface VideoAgentOptions {
 
 export class VideoAgent {
   private active: HTMLVideoElement | null = null;
-  /** Every video we have seen in this frame, so the debug tree can show the rejects too. */
-  private seen = new Set<HTMLVideoElement>();
-  private rejections = new WeakMap<HTMLVideoElement, RejectReason>();
+  /** Videos already considered, so repeat sweeps don't re-log the same rejection. */
+  private seen = new WeakSet<HTMLVideoElement>();
+  private seenCount = 0;
   private observer: MutationObserver | null = null;
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
   private startedAt = Date.now();
@@ -160,34 +160,34 @@ export class VideoAgent {
    */
   private consider(video: HTMLVideoElement, via: string): void {
     if (this.disposed) return;
+
     const isNew = !this.seen.has(video);
-    const isFirstEver = this.seen.size === 0;
-    this.seen.add(video);
-    if (isFirstEver) this.options.onFirstVideoSeen?.();
+    if (isNew) {
+      this.seen.add(video);
+      if (++this.seenCount === 1) this.options.onFirstVideoSeen?.();
+    }
 
     const reason = evaluate(video);
 
     if (reason === 'metadata-pending') {
-      this.rejections.set(video, reason);
       this.watchForMetadata(video);
       if (isNew) log.debug('detect', `saw video (${via}), waiting for metadata`, { id: idOf(video) });
       return;
     }
 
     if (reason !== null) {
-      this.rejections.set(video, reason);
       if (isNew) log.debug('detect', `skipped video (${via}): ${REJECT_TEXT[reason]}`, { id: idOf(video) });
       return;
     }
-
-    this.rejections.delete(video);
 
     if (this.active === video) return;
 
     // Prefer the larger video when a page has several plausible ones (a trailer next to
     // the film, for example).
     if (this.active && document.contains(this.active) && area(this.active) >= area(video)) {
-      this.rejections.set(video, 'smaller-candidate');
+      log.debug('detect', `skipped video (${via}): ${REJECT_TEXT['smaller-candidate']}`, {
+        id: idOf(video),
+      });
       return;
     }
 
@@ -232,40 +232,8 @@ export class VideoAgent {
   /** Force attachment to a specific video, bypassing the heuristics (used by the panel). */
   attachTo(video: HTMLVideoElement): void {
     this.seen.add(video);
-    this.rejections.delete(video);
     this.setActive(video, 'manual');
   }
-
-  /** Snapshot of every video in this frame, for the debug frame tree. */
-  report(): VideoReport[] {
-    for (const video of document.querySelectorAll('video')) this.seen.add(video);
-
-    const reports: VideoReport[] = [];
-    for (const video of this.seen) {
-      if (!video.isConnected) continue;
-      const rect = video.getBoundingClientRect();
-      const reason = this.rejections.get(video);
-      reports.push({
-        id: idOf(video),
-        src: describeSrc(video.currentSrc || video.src),
-        readyState: video.readyState,
-        duration: Number.isFinite(video.duration) ? video.duration : -1,
-        currentTime: video.currentTime,
-        paused: video.paused,
-        muted: video.muted,
-        videoWidth: video.videoWidth,
-        videoHeight: video.videoHeight,
-        rect: { x: round(rect.x), y: round(rect.y), w: round(rect.width), h: round(rect.height) },
-        active: video === this.active,
-        ...(reason ? { rejectedReason: REJECT_TEXT[reason] } : {}),
-      });
-    }
-    return reports;
-  }
-}
-
-function round(n: number): number {
-  return Math.round(n);
 }
 
 /**

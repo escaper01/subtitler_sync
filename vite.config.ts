@@ -15,12 +15,6 @@ export default defineConfig({
   build: {
     // Chrome/Edge only — no need to down-level modern APIs like requestVideoFrameCallback.
     target: 'chrome120',
-    rollupOptions: {
-      input: {
-        // Extension pages not referenced from the manifest still need to be built.
-        debug: resolve(root, 'src/debug/debug.html'),
-      },
-    },
   },
   server: {
     port: 5173,

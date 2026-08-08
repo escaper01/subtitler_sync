@@ -44,9 +44,10 @@
         <span id="status" class="status">No clip yet — press a button.</span>
       </div>
       <p>
-        The 10s clip is below the 90s detection threshold on purpose: the debug window should list
-        it as <em>skipped — looks like an ad or preroll</em>. That exercises the reject path.
-        The 100s clip should be picked up as the film.
+        The 10s clip is below the 90s detection threshold on purpose: nothing should attach to it.
+        (Set <code>localStorage['subtitler:debug'] = '1'</code> and reload to watch it being
+        skipped as <em>looks like an ad or preroll</em>.) The 100s clip should be picked up as the
+        film.
       </p>
     </section>
 
@@ -55,7 +56,7 @@
       <p>
         A child iframe with its own video. On the real site the player lives in a cross-origin
         iframe; this is same-origin, but it still proves <code>all_frames</code> injection and that
-        the frame tree resolves the hierarchy.
+        the allowlist gate reads the <em>top</em> page's host rather than the frame's.
       </p>
       <iframe src="./frame.html" title="nested player"></iframe>
     </section>
@@ -97,9 +98,9 @@
         </li>
         <li>Go fullscreen. Both the subtitles and the panel must stay visible.</li>
         <li>
-          Open the debug window (<kbd>Alt+Shift+D</kbd>): two frames should report in, each listing
-          its <code>&lt;video&gt;</code> with a <code>blob:…(MSE)</code> src, and the active one
-          ticking. <strong>Copy report</strong> should give you a pasteable markdown block.
+          In the <strong>Sites</strong> tab, switch <code>localhost</code> off. The panel and the
+          subtitles should vanish immediately, with no reload. Turn it back on from the toolbar
+          popup and they should come straight back.
         </li>
       </ol>
     </section>

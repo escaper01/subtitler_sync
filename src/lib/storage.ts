@@ -28,7 +28,7 @@ export interface PanelPrefs {
   collapsed: boolean;
   x: number;
   y: number;
-  tab: 'subtitles' | 'style' | 'sync';
+  tab: 'subtitles' | 'style' | 'sync' | 'sites';
 }
 
 export const DEFAULT_PANEL_PREFS: PanelPrefs = {
