@@ -1,6 +1,80 @@
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 
 /** Small shared primitives. Everything here renders inside the panel's shadow root. */
+
+/**
+ * A text input that can be typed into on top of a video player.
+ *
+ * Two things fight us. Keystrokes that escape the panel reach the player, which binds
+ * space to play/pause — so every key event stops here. And the player's own handler is
+ * often registered on `document` in the **capture** phase, which runs before the event
+ * reaches this input at all: it calls `preventDefault()` to stop the page scrolling, and
+ * that cancels the character insertion too. The space simply never appears.
+ *
+ * Capture-phase `preventDefault` cannot be undone from here, so when it has already
+ * happened the space is inserted by hand and the caret put back. That is the whole reason
+ * this component exists rather than a bare `<input>`; it is why space worked only
+ * sometimes, depending on which player was underneath.
+ */
+export function TextInput({
+  value,
+  onChange,
+  onEnter,
+  className = '',
+  ...rest
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onEnter?: () => void;
+  className?: string;
+  placeholder?: string;
+  maxLength?: number;
+  autoFocus?: boolean;
+  title?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  /** Where to put the caret after a hand-inserted character has been rendered. */
+  const caret = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (caret.current === null) return;
+    ref.current?.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  });
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // Never let the player see typing, whatever the key.
+    event.stopPropagation();
+
+    if (event.key === 'Enter') {
+      onEnter?.();
+      return;
+    }
+
+    if (event.key !== ' ' || !event.nativeEvent.defaultPrevented) return;
+
+    const input = event.currentTarget;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? start;
+
+    caret.current = start + 1;
+    onChange(`${input.value.slice(0, start)} ${input.value.slice(end)}`);
+  };
+
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      type="text"
+      value={value}
+      spellCheck={false}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={onKeyDown}
+      onKeyUp={(event) => event.stopPropagation()}
+      className={`rounded border border-white/10 bg-black/40 px-1.5 py-1 text-[11px] text-white/85 outline-none placeholder:text-white/25 focus:border-sky-400/60 ${className}`}
+    />
+  );
+}
 
 export function Button({
   children,

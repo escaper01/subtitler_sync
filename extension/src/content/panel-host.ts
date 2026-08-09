@@ -31,7 +31,22 @@ export class PanelHost {
 
     // The player treats clicks on itself as play/pause and mouse movement as "show
     // controls". Neither should happen because someone dragged the panel or typed in it.
-    for (const type of ['click', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'keydown', 'wheel']) {
+    //
+    // All three keyboard events, not just keydown: players bind space to play/pause on
+    // whichever of them they please, and a stray keyup is enough to pause the film while
+    // someone is typing a film's name into the search box.
+    const swallowed = [
+      'click',
+      'dblclick',
+      'mousedown',
+      'mouseup',
+      'pointerdown',
+      'keydown',
+      'keyup',
+      'keypress',
+      'wheel',
+    ];
+    for (const type of swallowed) {
       this.host.addEventListener(type, (event) => event.stopPropagation());
     }
 
