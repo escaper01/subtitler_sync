@@ -44,6 +44,16 @@ try {
 
   const total = await prisma.admin.count();
   console.log(`${total} admin${total === 1 ? '' : 's'} in the database.`);
+
+  // The settings singleton. Created disabled, so seeding never switches on a banner in
+  // front of real users; the dashboard turns it on. `update: {}` means re-running the
+  // seed cannot overwrite what the admin has since typed.
+  await prisma.siteSetting.upsert({
+    where: { id: 'singleton' },
+    update: {},
+    create: { id: 'singleton' },
+  });
+  console.log('site settings: ready');
 } catch (err) {
   console.error('Seeding failed:', err instanceof Error ? err.message : err);
   process.exitCode = 1;

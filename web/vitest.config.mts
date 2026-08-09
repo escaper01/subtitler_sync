@@ -6,8 +6,10 @@ export default defineConfig({
     alias: { '@': resolve(import.meta.dirname, '.') },
   },
   test: {
-    // The live smoke test is opt-in — see lib/subtitlecat/live.test.ts.
+    // The live smoke test is opt-in — see lib/subtitlecat/live.test.ts. So are the
+    // database-backed ones — see lib/entitlement.test.ts.
     include: ['**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/.next/**'],
+    setupFiles: ['./vitest.setup.mts'],
   },
 });
