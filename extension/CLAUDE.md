@@ -70,8 +70,10 @@ propagates to the frame that owns the video, and therefore to our overlay.
 
 ### Scope boundary
 
-This overlays text on video the user is already playing in their own browser. It does not
-download, decrypt, deobfuscate, record, or redistribute media, and must not grow features that do.
+This overlays text on video the user is already playing in their own browser, and fetches
+*subtitle text files* from a public subtitle site at the user's request. It does not download,
+decrypt, deobfuscate, record, or redistribute **media**, and must not grow features that do.
+Subtitles are text the user asked for by name; the video is not, and is not touched.
 
 ---
 
@@ -100,8 +102,11 @@ npm run icons    # regenerate public/icons/* from tools/make-icons.mjs
 ```
 
 Tests cover the pure logic — `lib/subtitles/parse.ts`, `lib/sync.ts`, `lib/subtitles/lookup.ts`,
-`lib/sites.ts` — because those are where a subtle error is invisible on screen. The DOM-facing
-parts (overlay positioning, detection) are verified through the harness instead.
+`lib/sites.ts`, `lib/searchTitle.ts` — because those are where a subtle error is invisible on
+screen. The DOM-facing parts (overlay positioning, detection) are verified through the harness
+instead.
+
+The Find tab needs the API running: `cd ../web && npm run dev`.
 
 ## Committing
 
@@ -169,8 +174,12 @@ src/
     subtitles/lookup.ts  cursor-cached binary search over sorted cues
     sync.ts              applyTransform, onePointAnchor, twoPointFit, FPS_RATIOS
     sites.ts             the allowlist: normalising, matching, storage, top-host resolution
+    api.ts               subtitle search client — SERVICE WORKER ONLY, see below
+    api-types.ts         copy of web/lib/api-types.ts — keep identical
+    languages.ts         copy of web/lib/languages.ts — keep identical
+    searchTitle.ts       guesses a film title from the tab's <title> to seed the search box
     messaging.ts         typed wrappers over chrome.runtime / chrome.tabs messaging
-    storage.ts           style + allowlist → storage.sync; per-movie state → storage.local
+    storage.ts           style + allowlist + languages → storage.sync; per-movie → storage.local
     videoKey.ts          stable per-film id (top page path + title + rounded duration)
     log.ts               console logger, off unless the page flag is set
 
@@ -213,7 +222,13 @@ them go through the service worker:
 content script  --sendToBackground-->  background     video-seen, video-detected, get-top-url
 background      --broadcastToTab---->  content script toggle-panel
 popup           --askBackground----->  background     tab state, toggle-panel relay
+panel           --askBackground----->  background     api:search, api:release, api:download
 ```
+
+That last line is not a stylistic choice. **The panel cannot call the API itself:** an MV3
+content script's `fetch` is subject to the *page's* CORS rules, while the service worker's is
+governed by our host permissions. `lib/api.ts` therefore runs in the worker only — importing it
+from the panel produces code that fails on someone else's site and works on yours.
 
 All message shapes live in the `ToBackground` / `ToContent` / `ToBackgroundFromPopup` unions in
 `src/types.ts`.
@@ -249,6 +264,33 @@ Two things about it are load-bearing:
 Matching is by domain suffix, so a rule covers its subdomains. Turning the switch off for a host
 removes *every* rule covering it, not just an exact match — otherwise switching `www.example.com`
 off would leave an `example.com` rule behind and the switch would flick straight back on.
+
+---
+
+## Subtitle search
+
+The **Find** tab searches subtitlecat through the `web/` API rather than the site directly — see
+the root `CLAUDE.md` for why. The API base is `http://localhost:3000` by default, since nothing
+is deployed yet; override it without a rebuild:
+
+```js
+chrome.storage.sync.set({ apiBase: 'https://subtitler.example.com' })
+```
+
+The UI mirrors what the search actually returns: a list of *releases* (someone's upload, named
+after the video file it was timed against), each holding one subtitle per language. Picking by
+filename is not cosmetic — a track timed against the same rip needs no syncing at all, which is
+why the release name is the most prominent thing in the row and the language is secondary.
+
+The search box is *seeded* from the tab's title via `guessSearchTitle`, never searched
+automatically: the guess is often right and sometimes comically wrong, and the user is looking
+straight at an editable input either way.
+
+**Preferred languages** live in `storage.sync` under `langs` and default to `['en']`. An empty
+list is never stored — the API reads "no languages" as "no filter", so unticking everything would
+return all ~150 machine translations rather than none, which is the opposite of what was meant.
+Changing the selection drops the fetched per-release tracks, because those were filtered by the
+old set and are now wrong.
 
 ---
 

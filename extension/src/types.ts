@@ -108,7 +108,18 @@ export type ToBackground =
   | { kind: 'video-seen' }
   | { kind: 'video-detected' }
   /** Fallback for a frame whose ancestor chain is opaque; answers with the tab's URL. */
-  | { kind: 'get-top-url' };
+  | { kind: 'get-top-url' }
+  /** The tab's title, which the panel seeds the subtitle search box from. */
+  | { kind: 'get-page-title' }
+  /**
+   * Subtitle search, relayed through the worker.
+   *
+   * The panel cannot call the API itself: a content script's `fetch` obeys the page's
+   * CORS rules, the worker's obeys our host permissions. See lib/api.ts.
+   */
+  | { kind: 'api:search'; query: string; langs: string[] }
+  | { kind: 'api:release'; path: string; langs: string[] }
+  | { kind: 'api:download'; path: string };
 
 /** background → content script */
 export type ToContent = { kind: 'toggle-panel' };

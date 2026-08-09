@@ -1,6 +1,7 @@
 import type { SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
 import { IDENTITY_SYNC } from '@/types';
 import { clampStyle, DEFAULT_STYLE } from '@/lib/style';
+import { DEFAULT_LANGUAGES } from '@/lib/languages';
 import { contextAlive } from '@/lib/log';
 
 /**
@@ -13,6 +14,7 @@ import { contextAlive } from '@/lib/log';
 
 const STYLE_KEY = 'style';
 const PANEL_KEY = 'panel';
+const LANGS_KEY = 'langs';
 const MOVIE_PREFIX = 'movie:';
 
 /** Films to remember before evicting the least recently used. */
@@ -28,7 +30,7 @@ export interface PanelPrefs {
   collapsed: boolean;
   x: number;
   y: number;
-  tab: 'subtitles' | 'style' | 'sync' | 'sites';
+  tab: 'subtitles' | 'find' | 'style' | 'sync' | 'sites';
 }
 
 export const DEFAULT_PANEL_PREFS: PanelPrefs = {
@@ -59,6 +61,41 @@ export async function saveStyle(style: SubtitleStyle): Promise<void> {
     await chrome.storage.sync.set({ [STYLE_KEY]: style });
   } catch {
     /* quota exceeded or offline — appearance is not worth surfacing an error for */
+  }
+}
+
+/* ------------------------------------------------------------------ languages */
+
+/**
+ * Which subtitle languages to show when searching.
+ *
+ * In `storage.sync` alongside the style: it's a handful of codes, and the languages you
+ * read subtitles in do not change per machine. Defaults to English rather than to
+ * everything — an unfiltered search returns 150 rows per release, most of them machine
+ * translations nobody asked for.
+ */
+export async function loadLanguages(): Promise<string[]> {
+  if (!contextAlive()) return [...DEFAULT_LANGUAGES];
+  try {
+    const stored = await chrome.storage.sync.get(LANGS_KEY);
+    const value = stored[LANGS_KEY] as unknown;
+    if (!Array.isArray(value)) return [...DEFAULT_LANGUAGES];
+
+    const codes = value.filter((code): code is string => typeof code === 'string');
+    // An empty stored list would silently mean "no filter" at the API, which is the
+    // opposite of what someone who unchecked everything meant.
+    return codes.length > 0 ? codes : [...DEFAULT_LANGUAGES];
+  } catch {
+    return [...DEFAULT_LANGUAGES];
+  }
+}
+
+export async function saveLanguages(codes: readonly string[]): Promise<void> {
+  if (!contextAlive()) return;
+  try {
+    await chrome.storage.sync.set({ [LANGS_KEY]: [...codes] });
+  } catch {
+    /* quota or offline — the picker still reflects the choice for this session */
   }
 }
 

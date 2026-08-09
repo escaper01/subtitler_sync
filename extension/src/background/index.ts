@@ -1,6 +1,7 @@
 import type { TabState, ToBackground, ToBackgroundFromPopup } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
 import { broadcastToTab, onMessage } from '@/lib/messaging';
+import { downloadSubtitle, fetchRelease, searchSubtitles } from '@/lib/api';
 
 /**
  * Service worker.
@@ -80,6 +81,24 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
       // Asked by a frame that cannot read its own ancestor chain. `sender.tab.url` is the
       // tab's top-level URL, which is exactly what the allowlist is checked against.
       return Promise.resolve(sender.tab?.url ?? null);
+    }
+
+    case 'get-page-title': {
+      // The panel runs in the player's iframe, whose own title is the embed's, not the
+      // film's. Only the worker can see the tab's title.
+      return Promise.resolve(sender.tab?.title ?? null);
+    }
+
+    case 'api:search': {
+      return searchSubtitles(message.query, message.langs);
+    }
+
+    case 'api:release': {
+      return fetchRelease(message.path, message.langs);
+    }
+
+    case 'api:download': {
+      return downloadSubtitle(message.path);
     }
 
     case 'popup:get-tab-state': {

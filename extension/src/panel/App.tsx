@@ -5,6 +5,7 @@ import { CueLookup } from '@/lib/subtitles/lookup';
 import { toCueTime } from '@/lib/sync';
 import { Banner, clock } from '@/panel/components/ui';
 import { SubtitlesTab } from '@/panel/components/SubtitlesTab';
+import { FindTab } from '@/panel/components/FindTab';
 import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
 import { SitesTab } from '@/panel/components/SitesTab';
@@ -13,7 +14,8 @@ import { SitesTab } from '@/panel/components/SitesTab';
 const TICK_MS = 120;
 
 const TABS = [
-  { id: 'subtitles', label: 'Subtitles' },
+  { id: 'subtitles', label: 'File' },
+  { id: 'find', label: 'Find' },
   { id: 'sync', label: 'Sync' },
   { id: 'style', label: 'Style' },
   { id: 'sites', label: 'Sites' },
@@ -158,6 +160,7 @@ function Panel() {
         )}
 
         {prefs.tab === 'subtitles' && <SubtitlesTab />}
+        {prefs.tab === 'find' && <FindTab />}
         {prefs.tab === 'sync' && <SyncTab />}
         {prefs.tab === 'style' && <StyleTab />}
         {prefs.tab === 'sites' && <SitesTab />}

@@ -1,14 +1,21 @@
 import { create } from 'zustand';
 import type { Cue, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
 import { IDENTITY_SYNC } from '@/types';
+import type { Release, ReleaseResponse, SearchResponse, Track } from '@/lib/api-types';
+import type { ApiResult } from '@/lib/api';
 import type { SubtitleOverlay } from '@/content/overlay';
-import { parseSubtitleFile, SubtitleParseError } from '@/lib/subtitles/parse';
+import { parseSubtitleFile, parseSubtitleText, SubtitleParseError } from '@/lib/subtitles/parse';
 import { clampStyle, DEFAULT_STYLE } from '@/lib/style';
+import { askBackground } from '@/lib/messaging';
+import { guessSearchTitle } from '@/lib/searchTitle';
+import { DEFAULT_LANGUAGES } from '@/lib/languages';
 import {
   DEFAULT_PANEL_PREFS,
+  loadLanguages,
   loadMovie,
   loadPanelPrefs,
   loadStyle,
+  saveLanguages,
   saveMovie,
   savePanelPrefs,
   saveStyle,
@@ -20,6 +27,43 @@ import { log } from '@/lib/log';
 
 /** What clicking a line in the cue list does. */
 export type ClickMode = 'quick' | 'anchorA' | 'anchorB';
+
+/**
+ * Subtitle search state.
+ *
+ * Kept in the store rather than in the Find tab so that results survive a trip to the Sync
+ * tab — searching, loading a track and then realigning it is one continuous job.
+ */
+export interface FindState {
+  query: string;
+  status: 'idle' | 'searching' | 'done';
+  error: string | null;
+  releases: Release[];
+  /**
+   * Tracks per release id. A missing key means "not fetched yet"; an empty array means
+   * "fetched, and this release has nothing in your languages" — a distinction the UI has
+   * to make or it shows a permanent spinner on releases that are simply empty.
+   */
+  tracks: Record<string, Track[] | undefined>;
+  /** Ids the user opened that we are still fetching. */
+  expanding: string[];
+  /** `releaseId/code` of the track currently downloading. */
+  loading: string | null;
+}
+
+const EMPTY_FIND: FindState = {
+  query: '',
+  status: 'idle',
+  error: null,
+  releases: [],
+  tracks: {},
+  expanding: [],
+  loading: null,
+};
+
+export function trackKey(track: Track): string {
+  return `${track.releaseId}/${track.code}`;
+}
 
 interface Bridge {
   video: HTMLVideoElement;
@@ -34,6 +78,9 @@ interface PanelState {
   sync: SyncState;
   style: SubtitleStyle;
   prefs: PanelPrefs;
+  /** Subtitle languages the user wants search results in. */
+  languages: string[];
+  find: FindState;
 
   open: boolean;
   subtitlesVisible: boolean;
@@ -51,6 +98,12 @@ interface PanelState {
 
   loadFile: (file: File) => Promise<void>;
   clearTrack: () => void;
+
+  setLanguages: (codes: string[]) => void;
+  setQuery: (query: string) => void;
+  runSearch: () => Promise<void>;
+  toggleRelease: (release: Release) => Promise<void>;
+  loadTrack: (track: Track) => Promise<void>;
 
   setClickMode: (mode: ClickMode) => void;
   syncToCue: (cue: Cue) => void;
@@ -100,6 +153,8 @@ export const usePanel = create<PanelState>((set, get) => ({
   sync: IDENTITY_SYNC,
   style: DEFAULT_STYLE,
   prefs: DEFAULT_PANEL_PREFS,
+  languages: [...DEFAULT_LANGUAGES],
+  find: EMPTY_FIND,
 
   open: true,
   subtitlesVisible: true,
@@ -114,10 +169,12 @@ export const usePanel = create<PanelState>((set, get) => ({
   async init(bridge) {
     set({ bridge });
 
-    const [style, prefs, movie] = await Promise.all([
+    const [style, prefs, movie, languages, pageTitle] = await Promise.all([
       loadStyle(),
       loadPanelPrefs(),
       loadMovie(videoKey()),
+      loadLanguages(),
+      askBackground<string | null>({ kind: 'get-page-title' }),
     ]);
 
     bridge.overlay.setStyle(style);
@@ -127,6 +184,10 @@ export const usePanel = create<PanelState>((set, get) => ({
     set({
       style,
       prefs,
+      languages,
+      // Seeded, not searched: the guess is often right but sometimes comically wrong, and
+      // firing a request off the back of a wrong guess wastes everyone's time.
+      find: { ...EMPTY_FIND, query: guessSearchTitle(pageTitle) },
       track: movie?.track ?? null,
       sync: movie?.sync ?? IDENTITY_SYNC,
       ready: true,
@@ -187,6 +248,163 @@ export const usePanel = create<PanelState>((set, get) => ({
     set({ track: null, notice: null, error: null });
     persistMovie(videoKey(), get().sync, null);
   },
+
+  /* ------------------------------------------------------------------ search */
+
+  setLanguages(codes) {
+    // Never store an empty list: the API reads "no languages" as "no filter", which would
+    // dump every machine translation the site has onto someone who unticked everything.
+    const next = codes.length > 0 ? codes : [...DEFAULT_LANGUAGES];
+    set({ languages: next });
+    void saveLanguages(next);
+
+    // Results on screen were filtered by the old set and are now a lie. Keep the releases
+    // (the search itself is language-independent) and drop the per-release tracks.
+    const find = get().find;
+    if (find.status === 'done') {
+      set({ find: { ...find, tracks: {}, expanding: [] } });
+    }
+  },
+
+  setQuery(query) {
+    set({ find: { ...get().find, query } });
+  },
+
+  async runSearch() {
+    const { find, languages } = get();
+    const query = find.query.trim();
+    if (query.length === 0 || find.status === 'searching') return;
+
+    set({ find: { ...EMPTY_FIND, query, status: 'searching' } });
+
+    const result = await askBackground<ApiResult<SearchResponse>>({
+      kind: 'api:search',
+      query,
+      langs: languages,
+    });
+
+    // A null answer means the worker never replied — it was restarting, or the extension
+    // was reloaded out from under us.
+    if (!result) {
+      set({ find: { ...get().find, status: 'done', error: 'The extension went away. Try again.' } });
+      return;
+    }
+
+    if (!result.ok) {
+      set({ find: { ...get().find, status: 'done', error: result.error } });
+      return;
+    }
+
+    // The search response already carries the tracks of the releases it expanded eagerly.
+    const tracks: Record<string, Track[]> = {};
+    for (const id of result.data.expanded) tracks[id] = [];
+    for (const track of result.data.tracks) tracks[track.releaseId]?.push(track);
+
+    set({
+      find: {
+        ...get().find,
+        status: 'done',
+        error: null,
+        releases: result.data.releases,
+        tracks,
+      },
+    });
+
+    log.info('find', 'search done', {
+      query,
+      releases: result.data.releases.length,
+      expanded: result.data.expanded.length,
+    });
+  },
+
+  async toggleRelease(release) {
+    const find = get().find;
+
+    // Already fetched: collapsing is the UI's business, so there is nothing to do here.
+    if (find.tracks[release.id] !== undefined) return;
+    if (find.expanding.includes(release.id)) return;
+
+    set({ find: { ...find, expanding: [...find.expanding, release.id] } });
+
+    const result = await askBackground<ApiResult<ReleaseResponse>>({
+      kind: 'api:release',
+      path: release.path,
+      langs: get().languages,
+    });
+
+    const done = get().find;
+    const expanding = done.expanding.filter((id) => id !== release.id);
+
+    if (!result || !result.ok) {
+      set({
+        find: {
+          ...done,
+          expanding,
+          error: result?.ok === false ? result.error : 'Could not open that release.',
+        },
+      });
+      return;
+    }
+
+    set({
+      find: {
+        ...done,
+        expanding,
+        error: null,
+        tracks: { ...done.tracks, [release.id]: result.data.tracks },
+      },
+    });
+  },
+
+  async loadTrack(track) {
+    const key = trackKey(track);
+    if (get().find.loading) return;
+
+    set({ find: { ...get().find, loading: key, error: null }, error: null, notice: null });
+
+    const result = await askBackground<ApiResult<{ text: string; filename: string }>>({
+      kind: 'api:download',
+      path: track.path,
+    });
+
+    if (!result || !result.ok) {
+      set({
+        find: { ...get().find, loading: null },
+        error: result?.ok === false ? result.error : 'Could not download that subtitle.',
+      });
+      return;
+    }
+
+    try {
+      const parsed = parseSubtitleText(result.data.text, result.data.filename);
+      get().bridge?.overlay.setTrack(parsed);
+
+      set({
+        track: parsed,
+        find: { ...get().find, loading: null },
+        notice: `Loaded ${parsed.cues.length} lines in ${track.name}.`,
+        // Straight to Sync: a fetched track is timed against some other release, so it is
+        // more likely to need aligning than a file the user picked deliberately.
+        prefs: { ...get().prefs, tab: 'sync' },
+      });
+      persistMovie(videoKey(), get().sync, parsed);
+
+      log.info('find', 'loaded fetched subtitles', {
+        language: track.code,
+        cues: parsed.cues.length,
+        name: parsed.name,
+      });
+    } catch (err) {
+      const message =
+        err instanceof SubtitleParseError
+          ? err.message
+          : `Could not read that subtitle. ${err instanceof Error ? err.message : ''}`;
+      set({ find: { ...get().find, loading: null }, error: message });
+      log.warn('find', 'fetched subtitle failed to parse', message);
+    }
+  },
+
+  /* -------------------------------------------------------------------- sync */
 
   setClickMode(mode) {
     set({ clickMode: mode });
