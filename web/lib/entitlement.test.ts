@@ -21,7 +21,7 @@ const DAY = 24 * 60 * 60 * 1000;
 
 /** A throwaway account per test, so runs cannot interfere with each other. */
 async function makeUser(): Promise<{ id: string; email: string }> {
-  const email = `test-${crypto.randomUUID()}@example.test`;
+  const email = `test-${crypto.randomUUID()}@ent.test`;
   const user = await db.user.create({ data: { email }, select: { id: true, email: true } });
   return user;
 }
@@ -34,11 +34,11 @@ async function entitledUntil(userId: string): Promise<Date | null> {
 describe.skipIf(!live)('entitlement, against Postgres', () => {
   beforeEach(async () => {
     // Leave real rows alone; only ever clear the throwaway accounts.
-    await db.user.deleteMany({ where: { email: { endsWith: '@example.test' } } });
+    await db.user.deleteMany({ where: { email: { endsWith: '@ent.test' } } });
   });
 
   afterAll(async () => {
-    await db.user.deleteMany({ where: { email: { endsWith: '@example.test' } } });
+    await db.user.deleteMany({ where: { email: { endsWith: '@ent.test' } } });
   });
 
   it('starts a first grant from now', async () => {

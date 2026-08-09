@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { useState } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { STORE_URL } from '@/lib/site';
@@ -43,6 +44,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <AccountLink />
           <ThemeToggle />
           <a
             href={STORE_URL}
@@ -93,6 +95,34 @@ export function SiteHeader() {
         </nav>
       )}
     </header>
+  );
+}
+
+/**
+ * Sign in, or a way to your account.
+ *
+ * Renders a fixed-width placeholder while the session is loading, so the header does not
+ * jump once it resolves.
+ */
+function AccountLink() {
+  const { status } = useSession();
+
+  if (status === 'loading') return <span className="h-9 w-16" aria-hidden />;
+
+  return status === 'authenticated' ? (
+    <Link
+      href="/account"
+      className="rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:text-text"
+    >
+      Account
+    </Link>
+  ) : (
+    <Link
+      href="/signin"
+      className="rounded-lg px-2.5 py-1.5 text-sm text-muted transition-colors hover:text-text"
+    >
+      Sign in
+    </Link>
   );
 }
 

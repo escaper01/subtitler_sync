@@ -1,20 +1,27 @@
 import type { AuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { isAdminEmail } from '@/lib/admins';
+import { onSignIn } from '@/lib/users';
 
 /**
- * Admin authentication: Google, restricted to the rows in the `Admin` table.
+ * Authentication, for everyone.
  *
- * There is no user table and no roles — the dashboard has exactly one kind of user. Anyone
- * not on the list is refused at `signIn`, so no session is ever created for them.
+ * One NextAuth instance serves two audiences: end users who want subtitle search, and the
+ * handful of admins who can open the dashboard. **Signing in no longer implies anything.**
+ * It used to: `signIn` refused every address that was not in the `Admin` table, so a
+ * session simply could not exist for a stranger.
+ *
+ * That property is gone deliberately, and its absence is load-bearing — `token.isAdmin`
+ * plus `middleware.ts` plus `requireAdmin()` are now the only things between a signed-in
+ * user and the dashboard. Every `/api/admin/*` route must call `requireAdmin()`.
  */
 
 /**
  * Fail loudly on missing configuration — but at request time, not at import.
  *
  * Validating at module load meant `next build` needed the production secrets just to
- * collect page data, which is both wrong and awkward in CI. Called from the auth route,
- * this turns a missing secret into a clear error rather than a sign-in that just refuses.
+ * collect page data. Called from the auth route, this turns a missing secret into a clear
+ * error rather than a sign-in that merely refuses.
  */
 export function assertAuthEnv(): void {
   const secret = process.env.NEXTAUTH_SECRET;
@@ -40,24 +47,46 @@ export const authOptions: AuthOptions = {
 
   callbacks: {
     async signIn({ profile }) {
-      // `email_verified` matters: without it a federated account could in principle
-      // assert an address it does not own.
+      const email = profile?.email;
+      // Without `email_verified` a federated account could in principle assert an address
+      // it does not own — and the address is the identity for entitlements.
       const verified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
-      if (verified === false) return false;
+      if (!email || verified === false) return false;
 
-      return isAdminEmail(profile?.email);
+      // Throwing here refuses the sign-in, which is the correct direction to fail: better
+      // no session than a session with no account behind it.
+      await onSignIn({
+        email,
+        name: profile?.name ?? null,
+        image: (profile as { picture?: string } | undefined)?.picture ?? null,
+      });
+
+      return true;
     },
 
     async jwt({ token }) {
-      // Re-checked on every token refresh, so deleting an Admin row ends that person's
-      // access at their next request rather than whenever their session would expire.
+      // Re-derived on every refresh, so deleting an `Admin` row ends dashboard access at
+      // the next request rather than whenever the token would have expired.
       token.isAdmin = await isAdminEmail(token.email);
+
+      // Entitlement is deliberately NOT in the token: a subscription bought thirty seconds
+      // ago must work now, not at the next refresh. It is read from the database per
+      // request instead.
       return token;
+    },
+
+    async session({ session, token }) {
+      if (session.user) {
+        session.user.isAdmin = Boolean(token.isAdmin);
+      }
+      return session;
     },
   },
 
   pages: {
-    signIn: '/admin/login',
-    error: '/admin/login',
+    // Neutral, because this page is now reached by ordinary users too. `/admin/login`
+    // still exists as its own route for the dashboard.
+    signIn: '/signin',
+    error: '/signin',
   },
 };
