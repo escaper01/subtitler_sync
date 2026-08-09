@@ -1,0 +1,36 @@
+# Local Postgres for development.
+#
+#   docker compose up -d      start it (data survives restarts)
+#   docker compose down       stop it
+#   docker compose down -v    stop it and delete the data
+#
+# Host port 5433, not 5432: something is already listening on 5432 on this machine, and a
+# clash there shows up as an authentication failure against the *other* database rather
+# than as "port in use" — an genuinely confusing hour. Change it here and in DATABASE_URL
+# together if 5433 is taken too.
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: subtitler-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: subtitler
+      POSTGRES_PASSWORD: subtitler
+      POSTGRES_DB: subtitler
+    ports:
+      - '5433:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    # Compose reports the container "started" as soon as the process spawns, but Postgres
+    # needs a moment more before it accepts connections. Without this, a migrate run
+    # immediately after `up -d` fails perhaps half the time.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U subtitler -d subtitler']
+      interval: 3s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  db-data:

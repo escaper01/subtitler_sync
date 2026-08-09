@@ -4,12 +4,20 @@
   "private": true,
   "description": "Subtitle search API for the Subtitler extension, plus its admin dashboard.",
   "scripts": {
+    "postinstall": "prisma generate",
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "tsc --noEmit && vitest run"
+    "check": "tsc --noEmit && vitest run",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d --wait && prisma migrate dev",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "node prisma/seed.mjs",
+    "db:studio": "prisma studio",
+    "setup": "docker compose up -d --wait && prisma migrate dev --name init"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",

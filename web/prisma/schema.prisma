@@ -13,6 +13,20 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Who may sign in to /admin.
+///
+/// A table rather than a comma-separated env var: adding someone should not need a
+/// redeploy, and this leaves somewhere to hang per-admin state later. Seeded by
+/// prisma/seed.mjs — an empty table locks everyone out, including you.
+model Admin {
+  id    String  @id @default(cuid())
+  /// Lowercased on write. Compared against the verified Google address at sign-in.
+  email String  @unique
+  name  String?
+
+  createdAt DateTime @default(now())
+}
+
 enum SubmissionKind {
   REPORT
   FEATURE

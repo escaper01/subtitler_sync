@@ -1,0 +1,52 @@
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { loadEnv } from './load-env.mjs';
+
+/**
+ * Seed the admin list.
+ *
+ *   npm run db:seed
+ *
+ * Also runs automatically after `prisma migrate dev` and `prisma migrate reset` — see the
+ * `seed` entry in prisma.config.ts.
+ *
+ * An empty `Admin` table locks everyone out of /admin, including whoever set the project
+ * up, so this is not optional bookkeeping. Upserts rather than inserts, so it is safe to
+ * run repeatedly and cannot fail a migration on the second go.
+ *
+ * To add another admin, put them in the list below and run it again — or insert a row by
+ * hand; nothing here is privileged.
+ */
+
+const ADMINS = [{ email: 'assaoui54@gmail.com', name: 'Osama' }];
+
+loadEnv();
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('DATABASE_URL is not set. Copy .env.example to .env and start the database:');
+  console.error('  docker compose up -d');
+  process.exit(1);
+}
+
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+
+try {
+  for (const { email, name } of ADMINS) {
+    const address = email.trim().toLowerCase();
+    await prisma.admin.upsert({
+      where: { email: address },
+      update: { name },
+      create: { email: address, name },
+    });
+    console.log(`admin: ${address}`);
+  }
+
+  const total = await prisma.admin.count();
+  console.log(`${total} admin${total === 1 ? '' : 's'} in the database.`);
+} catch (err) {
+  console.error('Seeding failed:', err instanceof Error ? err.message : err);
+  process.exitCode = 1;
+} finally {
+  await prisma.$disconnect();
+}

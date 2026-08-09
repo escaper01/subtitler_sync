@@ -3,15 +3,61 @@
 Next.js app serving the extension's subtitle search API. The admin dashboard will live here too,
 at `/admin`, and is not built yet.
 
+## Setting it up from scratch
+
+Needs Docker and Node 20+. From `web/`:
+
+```bash
+npm install                  # also runs `prisma generate`
+cp .env.example .env         # then fill in the two Google values, see below
+npm run setup                # starts Postgres in Docker and runs the migrations
+npm run db:seed              # puts you in the Admin table
+npm run dev                  # http://localhost:3000
+```
+
+`npm run setup` is `docker compose up -d --wait && prisma migrate dev --name init`. The
+`--wait` matters: Compose reports the container started as soon as the process spawns, but
+Postgres accepts connections a moment later, and a migration run into that gap fails about
+half the time.
+
+### The environment file
+
+`.env` is git-ignored; `.env.example` is the committed template and explains every value.
+Next reads `.env.local` first and `.env` second, so use `.env.local` for per-machine
+overrides.
+
+- **`DATABASE_URL`** — already correct for the Docker database. Host port is **5433**, not
+  5432, because 5432 is commonly already occupied; a clash there surfaces as an auth
+  failure against somebody else's database rather than as "port in use".
+- **`NEXTAUTH_SECRET`** — at least 32 characters. Generate one with:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+  Changing it signs everyone out. Use a different value in production.
+- **`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`** — the only two you must fetch by hand.
+  Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client
+  ID → Web application. The authorised redirect URI must be exactly
+  `<NEXTAUTH_URL>/api/auth/callback/google`. Until these are set, `/admin` cannot be signed
+  into; everything else runs.
+- **`NEXT_PUBLIC_DONATE_URL`** — optional; the Donate button is inert without it.
+
+There is no `ADMIN_EMAILS`. Admins are rows in the database — see below.
+
 ## Commands
 
 ```bash
-npm install
 npm run dev        # http://localhost:3000 — what the extension points at by default
 npm run build
 npm run test       # parser tests, offline
 npm run check      # typecheck + tests
 LIVE=1 npm test    # also hits the real subtitlecat (see below)
+
+npm run db:up      # start Postgres
+npm run db:down    # stop it (data kept)
+npm run db:reset   # destroy the data, recreate, migrate, re-seed
+npm run db:migrate # after editing schema.prisma
+npm run db:seed    # re-apply the admin list
+npm run db:studio  # browse the data
 ```
 
 ## Stack
@@ -56,10 +102,16 @@ credentials stay off and `*` remains safe.
 the public home page. Both are gated in `middleware.ts` — server-side, before the route is
 served. A client-side guard would still ship the page bundle to a stranger.
 
-Auth is NextAuth + Google against `ADMIN_EMAILS`, a comma-separated env var. There is no
-user table and no roles, because there is exactly one kind of user. `isAdmin` is re-derived
-from the allowlist on **every** token refresh, so removing an address ends that session's
-access at its next request rather than whenever it would have expired.
+Auth is NextAuth + Google, checked against the **`Admin` table**. There is no user table
+and no roles, because there is exactly one kind of user. `isAdmin` is re-derived from the
+database on **every** token refresh, so deleting a row ends that session's access at its
+next request rather than whenever it would have expired.
+
+`isAdminEmail` errs closed: a database failure denies access instead of granting it.
+
+The list is seeded from `prisma/seed.mjs`, which upserts and so is safe to re-run. **An
+empty `Admin` table locks everyone out, including you** — to add someone, add them to that
+file and `npm run db:seed`, or insert a row by hand.
 
 `/api/admin/*` re-checks the session itself. Middleware only covers `/admin/*` pages; a
 mutating route under `/api/*` has to answer for itself rather than trust something upstream
@@ -78,10 +130,13 @@ Prisma 7 **removed `url` from the datasource block**: the connection string now 
 (`@prisma/adapter-pg`) in `lib/db.ts`. Those are two separate paths now; setting only one
 gets you a CLI that migrates fine and an app that cannot connect.
 
-```bash
-cp .env.example .env.local     # then fill in DATABASE_URL and the auth values
-npx prisma migrate dev --name init
-```
+Prisma 7 also **stopped loading `.env` by itself**, which is why `prisma/load-env.mjs`
+exists and is called from both `prisma.config.ts` and the seed. Without it the CLI sees an
+empty connection string and reports it as a broken database rather than as unloaded config.
+
+After editing `schema.prisma`, run `npm run db:migrate` — and note that adding a model
+needs `prisma generate` before the client knows about it. `migrate dev` normally does that;
+if `db.something` is suddenly `undefined`, that generate did not happen.
 
 Without `DATABASE_URL` the site still builds and the scraping API still works — only
 `/admin` and `POST /api/feedback` fail, and both say so rather than showing a stack trace.

@@ -48,9 +48,10 @@ place where neither typechecker is looking.
 Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click loading,
 the public site, and the admin dashboard at `/admin` (submissions queue + the API reference).
 
-Needs configuration before `/admin` or feedback will run — see `web/.env.example`: a Postgres
-`DATABASE_URL`, a Google OAuth client, `NEXTAUTH_SECRET`, and `ADMIN_EMAILS`. The scraping API
-works without any of them.
+Setting up `web/` from scratch is `npm install && cp .env.example .env && npm run setup &&
+npm run db:seed` — Postgres runs in Docker (`web/docker-compose.yml`) and the admin list is a
+table, seeded from `web/prisma/seed.mjs`. The only values you must fetch by hand are the Google
+OAuth client id and secret, and they gate nothing but `/admin`. See `web/CLAUDE.md`.
 
 Not built yet, in this order: licence keys (`X-Subtitler-Key`, checked server-side, rate limited
 per key), then telemetry. The API is shaped for them — the CORS allowlist already names the key
