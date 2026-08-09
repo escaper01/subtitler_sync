@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { ApiError } from '@/lib/api-types';
+import { isKnownLanguage } from '@/lib/languages';
 import { UpstreamError } from '@/lib/subtitlecat/http';
 
 /**
@@ -13,7 +14,7 @@ import { UpstreamError } from '@/lib/subtitlecat/http';
 
 const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, X-Subtitler-Key, X-Subtitler-Install',
   'Access-Control-Max-Age': '86400',
 };
@@ -53,32 +54,40 @@ export function fromError(err: unknown): Response {
   return fail('Something went wrong on our side', 500);
 }
 
-const MAX_QUERY_LENGTH = 120;
+/** Long enough for any real title, short enough that nobody posts a novel through it. */
+export const MAX_QUERY_LENGTH = 100;
+const MIN_QUERY_LENGTH = 2;
 
-/** Validate a search term. Returns null when it could not be a real title. */
+/**
+ * Validate a search term. Returns null when it could not be a real title.
+ *
+ * Whitespace is collapsed rather than merely trimmed, so " the   matrix " and "the matrix"
+ * are one cache entry instead of two.
+ */
 export function parseQuery(raw: string | null): string | null {
-  const value = raw?.trim() ?? '';
-  if (value.length === 0 || value.length > MAX_QUERY_LENGTH) return null;
+  const value = (raw ?? '').replace(/\s+/g, ' ').trim();
+  if (value.length < MIN_QUERY_LENGTH || value.length > MAX_QUERY_LENGTH) return null;
   return value;
 }
 
-const LANGUAGE_CODE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/i;
-const MAX_LANGUAGES = 40;
-
 /**
- * Parse `?langs=en,fr,zh-CN`.
+ * Parse `?lang=en`.
  *
- * Unrecognised entries are dropped rather than rejected: the picker and this API can be
- * different versions, and a code we don't know is a filter that matches nothing, not a
- * bad request.
+ * Exactly one language, and it must be one we actually offer. Rejected rather than
+ * ignored: an unknown code silently filtering everything away is indistinguishable from
+ * "this film has no subtitles", which is a far more confusing thing to debug than a 400.
  */
-export function parseLanguages(raw: string | null): string[] {
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((code) => code.trim())
-    .filter((code) => code.length > 0 && LANGUAGE_CODE.test(code))
-    .slice(0, MAX_LANGUAGES);
+export function parseLanguage(raw: string | null): string | null {
+  const value = (raw ?? '').trim();
+  return isKnownLanguage(value) ? value : null;
+}
+
+/** Parse `?page=2`. 1-based; anything unusable is page 1. */
+export function parsePage(raw: string | null): number {
+  const value = Number.parseInt((raw ?? '').trim(), 10);
+  if (!Number.isFinite(value) || value < 1) return 1;
+  // A film has tens of releases, not thousands. This bounds the upstream work per request.
+  return Math.min(value, 50);
 }
 
 /** Validate a site-relative path from the client before it reaches the fetcher. */

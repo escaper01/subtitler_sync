@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LANGUAGES } from '@/lib/languages';
+import { LANGUAGES, languageName } from '@/lib/languages';
+import { TextInput } from '@/panel/components/ui';
 
 /**
- * The language preference control: a dropdown of checkboxes with a filter box.
+ * The language preference control: one language, chosen from a filterable list.
  *
  * It sits beside the search input because it is not a per-search choice — whatever is
- * ticked here is saved and every later search is filtered to it. Hence the summary label
- * ("English", "3 languages") rather than a list: the point is the setting, not the picker.
+ * picked here is saved and every later search is filtered to it.
+ *
+ * Single-select on purpose. The API takes one language, and a result list mixing several
+ * reads as noise: the point of the filter is to cut the ~150 machine translations each
+ * release carries down to the one that is any use.
  */
 export function LanguagePicker({
   selected,
   onChange,
 }: {
-  selected: readonly string[];
-  onChange: (codes: string[]) => void;
+  selected: string;
+  onChange: (code: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
@@ -50,12 +54,10 @@ export function LanguagePicker({
     );
   }, [filter]);
 
-  const toggle = (code: string): void => {
-    onChange(
-      selected.includes(code)
-        ? selected.filter((value) => value !== code)
-        : [...selected, code],
-    );
+  const choose = (code: string): void => {
+    onChange(code);
+    setOpen(false);
+    setFilter('');
   };
 
   return (
@@ -63,41 +65,43 @@ export function LanguagePicker({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        title="Which languages to show"
+        title="Subtitle language"
         className="flex h-[26px] items-center gap-1 rounded border border-white/10 bg-black/40 px-2 text-[11px] text-white/80 hover:border-white/25"
       >
-        <span className="max-w-24 truncate">{summarise(selected)}</span>
+        <span className="max-w-24 truncate">{languageName(selected)}</span>
         <span className="text-white/40">▾</span>
       </button>
 
       {open && (
         <div className="absolute right-0 z-10 mt-1 w-52 rounded border border-white/15 bg-neutral-900 shadow-xl">
           <div className="border-b border-white/10 p-1.5">
-            <input
-              type="text"
+            <TextInput
               value={filter}
+              onChange={setFilter}
               autoFocus
               placeholder="Filter languages"
-              onChange={(e) => setFilter(e.target.value)}
-              className="w-full rounded border border-white/10 bg-black/40 px-1.5 py-1 text-[11px] text-white/80 outline-none placeholder:text-white/25 focus:border-sky-400/60"
+              className="w-full"
             />
           </div>
 
           <ul className="max-h-52 overflow-y-auto py-0.5">
             {matches.map((language) => (
               <li key={language.code}>
-                <label className="flex cursor-pointer items-center gap-2 px-2 py-1 hover:bg-white/5">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(language.code)}
-                    onChange={() => toggle(language.code)}
-                    className="h-3.5 w-3.5 shrink-0 accent-sky-400"
-                  />
+                <button
+                  type="button"
+                  onClick={() => choose(language.code)}
+                  className={`flex w-full items-center gap-2 px-2 py-1 text-left hover:bg-white/5 ${
+                    language.code === selected ? 'bg-white/10' : ''
+                  }`}
+                >
+                  <span className="w-2.5 shrink-0 text-[10px] text-sky-400">
+                    {language.code === selected ? '✓' : ''}
+                  </span>
                   <span className="flex-1 truncate text-[11px] text-white/80">
                     {language.name}
                   </span>
                   <span className="font-mono text-[10px] text-white/25">{language.code}</span>
-                </label>
+                </button>
               </li>
             ))}
 
@@ -105,28 +109,8 @@ export function LanguagePicker({
               <li className="px-2 py-2 text-[11px] text-white/35">No language matches that.</li>
             )}
           </ul>
-
-          <div className="flex items-center justify-between border-t border-white/10 px-2 py-1">
-            <span className="text-[10px] text-white/30">{selected.length} selected</span>
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className="text-[10px] text-white/45 hover:text-white"
-            >
-              Reset
-            </button>
-          </div>
         </div>
       )}
     </div>
   );
-}
-
-function summarise(selected: readonly string[]): string {
-  if (selected.length === 0) return 'English';
-  if (selected.length === 1) {
-    const only = LANGUAGES.find((language) => language.code === selected[0]);
-    return only?.name ?? selected[0]!;
-  }
-  return `${selected.length} languages`;
 }

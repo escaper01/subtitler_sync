@@ -1,4 +1,5 @@
 import type { Release, ReleaseResponse, SearchResponse, Track } from '@/lib/api-types';
+import { PAGE_SIZE } from '@/lib/api-types';
 import { TtlCache } from '@/lib/cache';
 import { BASE, fetchText, resolveUpstream, UpstreamError } from '@/lib/subtitlecat/http';
 import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
@@ -15,8 +16,11 @@ const detailCache = new TtlCache<{ title: string; tracks: Track[]; missing: bool
   60 * 60 * 1000,
 );
 
-/** How many of the top releases to expand eagerly on a search. */
-export const EXPAND_COUNT = 5;
+/**
+ * Every release on a page is expanded, so a page is also the unit of upstream work: one
+ * search fetch plus `PAGE_SIZE` detail fetches, no matter how many releases matched.
+ */
+export const EXPAND_COUNT = PAGE_SIZE;
 
 /** Best first: the site's own thumbs-up, then raw download count. */
 function byQuality(a: Release, b: Release): number {
@@ -56,49 +60,54 @@ export async function releaseTracks(path: string): Promise<ReleaseResponse> {
 }
 
 /**
- * Search, then expand the best few releases so the common case — "find me an English
- * subtitle for this film" — is answered in one round trip.
+ * One page of results, with every release on it expanded, so the common case — "find me
+ * an English subtitle for this film" — is answered in a single round trip.
  *
- * Expansions run concurrently and failures are swallowed: one release's page 404ing
- * should cost that release's languages, not the whole search.
+ * Expansions run concurrently and failures are swallowed: one release's page 404ing should
+ * cost that release's languages, not the whole search.
  */
 export async function searchExpanded(
   query: string,
-  languages: readonly string[],
+  language: string,
+  page: number,
 ): Promise<SearchResponse> {
-  const releases = await search(query);
-  const top = releases.slice(0, EXPAND_COUNT);
+  const all = await search(query);
 
-  const settled = await Promise.allSettled(top.map((release) => releaseTracks(release.path)));
+  const start = (page - 1) * PAGE_SIZE;
+  const releases = all.slice(start, start + PAGE_SIZE);
+
+  const settled = await Promise.allSettled(
+    releases.map((release) => releaseTracks(release.path)),
+  );
 
   const tracks: Track[] = [];
   const expanded: string[] = [];
 
   settled.forEach((result, index) => {
-    const release = top[index];
+    const release = releases[index];
     if (!release || result.status !== 'fulfilled') return;
 
     expanded.push(release.id);
-    tracks.push(...filterByLanguage(result.value.tracks, languages));
+    tracks.push(...filterByLanguage(result.value.tracks, language));
   });
 
-  return { query: query.trim(), releases, tracks, expanded };
+  return {
+    query: query.trim(),
+    language,
+    page,
+    pageSize: PAGE_SIZE,
+    total: all.length,
+    hasMore: start + releases.length < all.length,
+    releases,
+    tracks,
+    expanded,
+  };
 }
 
-/**
- * Keep only the languages the user asked for.
- *
- * An empty list means no filter rather than no results — the API stays useful to a caller
- * that has no preferences, and the extension always sends at least English.
- */
-export function filterByLanguage(
-  tracks: readonly Track[],
-  languages: readonly string[],
-): Track[] {
-  if (languages.length === 0) return [...tracks];
-
-  const wanted = new Set(languages.map((code) => code.toLowerCase()));
-  return tracks.filter((track) => wanted.has(track.code.toLowerCase()));
+/** Keep only the one language asked for. */
+export function filterByLanguage(tracks: readonly Track[], language: string): Track[] {
+  const wanted = language.toLowerCase();
+  return tracks.filter((track) => track.code.toLowerCase() === wanted);
 }
 
 /** Fetch a `.srt`'s text. The path comes from a `Track`, and is re-validated upstream. */

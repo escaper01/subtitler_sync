@@ -117,8 +117,8 @@ export type ToBackground =
    * The panel cannot call the API itself: a content script's `fetch` obeys the page's
    * CORS rules, the worker's obeys our host permissions. See lib/api.ts.
    */
-  | { kind: 'api:search'; query: string; langs: string[] }
-  | { kind: 'api:release'; path: string; langs: string[] }
+  | { kind: 'api:search'; query: string; lang: string; page: number }
+  | { kind: 'api:release'; path: string; lang: string }
   | { kind: 'api:download'; path: string };
 
 /** background → content script */

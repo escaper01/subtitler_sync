@@ -90,11 +90,11 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
     }
 
     case 'api:search': {
-      return searchSubtitles(message.query, message.langs);
+      return searchSubtitles(message.query, message.lang, message.page);
     }
 
     case 'api:release': {
-      return fetchRelease(message.path, message.langs);
+      return fetchRelease(message.path, message.lang);
     }
 
     case 'api:download': {

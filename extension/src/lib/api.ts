@@ -76,16 +76,17 @@ async function request<T>(path: string, params: Record<string, string>): Promise
 
 export async function searchSubtitles(
   query: string,
-  langs: readonly string[],
+  lang: string,
+  page: number,
 ): Promise<ApiResult<SearchResponse>> {
-  return request<SearchResponse>('api/search', { q: query, langs: langs.join(',') });
+  return request<SearchResponse>('api/search', { q: query, lang, page: String(page) });
 }
 
 export async function fetchRelease(
   path: string,
-  langs: readonly string[],
+  lang: string,
 ): Promise<ApiResult<ReleaseResponse>> {
-  return request<ReleaseResponse>('api/release', { path, langs: langs.join(',') });
+  return request<ReleaseResponse>('api/release', { path, lang });
 }
 
 /** Fetch a subtitle's text. Returns the text itself, not JSON. */

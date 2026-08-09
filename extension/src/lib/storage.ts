@@ -1,7 +1,7 @@
 import type { SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
 import { IDENTITY_SYNC } from '@/types';
 import { clampStyle, DEFAULT_STYLE } from '@/lib/style';
-import { DEFAULT_LANGUAGES } from '@/lib/languages';
+import { DEFAULT_LANGUAGE, isKnownLanguage } from '@/lib/languages';
 import { contextAlive } from '@/lib/log';
 
 /**
@@ -64,36 +64,37 @@ export async function saveStyle(style: SubtitleStyle): Promise<void> {
   }
 }
 
-/* ------------------------------------------------------------------ languages */
+/* ------------------------------------------------------------------- language */
 
 /**
- * Which subtitle languages to show when searching.
+ * Which subtitle language to search in.
  *
- * In `storage.sync` alongside the style: it's a handful of codes, and the languages you
- * read subtitles in do not change per machine. Defaults to English rather than to
- * everything — an unfiltered search returns 150 rows per release, most of them machine
- * translations nobody asked for.
+ * In `storage.sync` alongside the style: it's one code, and the language you read
+ * subtitles in does not change per machine.
+ *
+ * One language, not several. The API takes exactly one — a result list mixing languages
+ * reads as noise, and the whole point of the filter is to cut the ~150 machine
+ * translations each release carries down to the one that is any use.
  */
-export async function loadLanguages(): Promise<string[]> {
-  if (!contextAlive()) return [...DEFAULT_LANGUAGES];
+export async function loadLanguage(): Promise<string> {
+  if (!contextAlive()) return DEFAULT_LANGUAGE;
   try {
     const stored = await chrome.storage.sync.get(LANGS_KEY);
     const value = stored[LANGS_KEY] as unknown;
-    if (!Array.isArray(value)) return [...DEFAULT_LANGUAGES];
 
-    const codes = value.filter((code): code is string => typeof code === 'string');
-    // An empty stored list would silently mean "no filter" at the API, which is the
-    // opposite of what someone who unchecked everything meant.
-    return codes.length > 0 ? codes : [...DEFAULT_LANGUAGES];
+    // Earlier versions stored an array. Take the first entry rather than resetting to
+    // English, so someone who had picked, say, Arabic keeps it.
+    const code = Array.isArray(value) ? value[0] : value;
+    return typeof code === 'string' && isKnownLanguage(code) ? code : DEFAULT_LANGUAGE;
   } catch {
-    return [...DEFAULT_LANGUAGES];
+    return DEFAULT_LANGUAGE;
   }
 }
 
-export async function saveLanguages(codes: readonly string[]): Promise<void> {
+export async function saveLanguage(code: string): Promise<void> {
   if (!contextAlive()) return;
   try {
-    await chrome.storage.sync.set({ [LANGS_KEY]: [...codes] });
+    await chrome.storage.sync.set({ [LANGS_KEY]: code });
   } catch {
     /* quota or offline — the picker still reflects the choice for this session */
   }

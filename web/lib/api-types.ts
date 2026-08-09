@@ -38,16 +38,28 @@ export interface Track {
   path: string;
 }
 
+/** How many releases one page holds. Every release on a page arrives expanded. */
+export const PAGE_SIZE = 5;
+
 export interface SearchResponse {
   query: string;
+  /** The language code the results were filtered to. */
+  language: string;
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+  /** Releases matching the query across all pages. */
+  total: number;
+  hasMore: boolean;
+  /** This page's releases only. */
   releases: Release[];
   /**
-   * Tracks for the releases we expanded eagerly (the most-downloaded few), already
-   * filtered to the requested languages. Releases not represented here have not been
-   * fetched yet — ask `/api/release` when the user opens one.
+   * Tracks for the releases on this page, already filtered to `language`. A release with
+   * nothing in that language is still listed in `expanded` with no tracks here — the
+   * client has to tell "empty" from "not fetched".
    */
   tracks: Track[];
-  /** Ids of the releases `tracks` covers, so the client can tell empty from unfetched. */
+  /** Ids of the releases `tracks` covers. */
   expanded: string[];
 }
 

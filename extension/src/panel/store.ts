@@ -8,14 +8,14 @@ import { parseSubtitleFile, parseSubtitleText, SubtitleParseError } from '@/lib/
 import { clampStyle, DEFAULT_STYLE } from '@/lib/style';
 import { askBackground } from '@/lib/messaging';
 import { guessSearchTitle } from '@/lib/searchTitle';
-import { DEFAULT_LANGUAGES } from '@/lib/languages';
+import { DEFAULT_LANGUAGE } from '@/lib/languages';
 import {
   DEFAULT_PANEL_PREFS,
-  loadLanguages,
+  loadLanguage,
   loadMovie,
   loadPanelPrefs,
   loadStyle,
-  saveLanguages,
+  saveLanguage,
   saveMovie,
   savePanelPrefs,
   saveStyle,
@@ -38,6 +38,10 @@ export interface FindState {
   query: string;
   status: 'idle' | 'searching' | 'done';
   error: string | null;
+  /** 1-based, and only ever one page's worth of releases is held. */
+  page: number;
+  total: number;
+  hasMore: boolean;
   releases: Release[];
   /**
    * Tracks per release id. A missing key means "not fetched yet"; an empty array means
@@ -55,6 +59,9 @@ const EMPTY_FIND: FindState = {
   query: '',
   status: 'idle',
   error: null,
+  page: 1,
+  total: 0,
+  hasMore: false,
   releases: [],
   tracks: {},
   expanding: [],
@@ -78,8 +85,8 @@ interface PanelState {
   sync: SyncState;
   style: SubtitleStyle;
   prefs: PanelPrefs;
-  /** Subtitle languages the user wants search results in. */
-  languages: string[];
+  /** The subtitle language search results are filtered to. */
+  language: string;
   find: FindState;
 
   open: boolean;
@@ -99,9 +106,9 @@ interface PanelState {
   loadFile: (file: File) => Promise<void>;
   clearTrack: () => void;
 
-  setLanguages: (codes: string[]) => void;
+  setLanguage: (code: string) => void;
   setQuery: (query: string) => void;
-  runSearch: () => Promise<void>;
+  runSearch: (page?: number) => Promise<void>;
   toggleRelease: (release: Release) => Promise<void>;
   loadTrack: (track: Track) => Promise<void>;
 
@@ -153,7 +160,7 @@ export const usePanel = create<PanelState>((set, get) => ({
   sync: IDENTITY_SYNC,
   style: DEFAULT_STYLE,
   prefs: DEFAULT_PANEL_PREFS,
-  languages: [...DEFAULT_LANGUAGES],
+  language: DEFAULT_LANGUAGE,
   find: EMPTY_FIND,
 
   open: true,
@@ -169,11 +176,11 @@ export const usePanel = create<PanelState>((set, get) => ({
   async init(bridge) {
     set({ bridge });
 
-    const [style, prefs, movie, languages, pageTitle] = await Promise.all([
+    const [style, prefs, movie, language, pageTitle] = await Promise.all([
       loadStyle(),
       loadPanelPrefs(),
       loadMovie(videoKey()),
-      loadLanguages(),
+      loadLanguage(),
       askBackground<string | null>({ kind: 'get-page-title' }),
     ]);
 
@@ -184,7 +191,7 @@ export const usePanel = create<PanelState>((set, get) => ({
     set({
       style,
       prefs,
-      languages,
+      language,
       // Seeded, not searched: the guess is often right but sometimes comically wrong, and
       // firing a request off the back of a wrong guess wastes everyone's time.
       find: { ...EMPTY_FIND, query: guessSearchTitle(pageTitle) },
@@ -251,36 +258,36 @@ export const usePanel = create<PanelState>((set, get) => ({
 
   /* ------------------------------------------------------------------ search */
 
-  setLanguages(codes) {
-    // Never store an empty list: the API reads "no languages" as "no filter", which would
-    // dump every machine translation the site has onto someone who unticked everything.
-    const next = codes.length > 0 ? codes : [...DEFAULT_LANGUAGES];
-    set({ languages: next });
-    void saveLanguages(next);
+  setLanguage(code) {
+    if (code === get().language) return;
 
-    // Results on screen were filtered by the old set and are now a lie. Keep the releases
-    // (the search itself is language-independent) and drop the per-release tracks.
-    const find = get().find;
-    if (find.status === 'done') {
-      set({ find: { ...find, tracks: {}, expanding: [] } });
-    }
+    set({ language: code });
+    void saveLanguage(code);
+
+    // Every track on screen was filtered to the old language, so the results are now a
+    // lie. Re-run rather than clear: the query has not changed and the search itself is
+    // cached upstream, so this costs the detail fetches only.
+    if (get().find.status === 'done') void get().runSearch(get().find.page);
   },
 
   setQuery(query) {
     set({ find: { ...get().find, query } });
   },
 
-  async runSearch() {
-    const { find, languages } = get();
+  async runSearch(page = 1) {
+    const { find, language } = get();
     const query = find.query.trim();
     if (query.length === 0 || find.status === 'searching') return;
 
-    set({ find: { ...EMPTY_FIND, query, status: 'searching' } });
+    // A page replaces the previous one rather than appending: five releases, each with one
+    // language, is a list you read — not one you scroll.
+    set({ find: { ...EMPTY_FIND, query, page, status: 'searching' } });
 
     const result = await askBackground<ApiResult<SearchResponse>>({
       kind: 'api:search',
       query,
-      langs: languages,
+      lang: language,
+      page,
     });
 
     // A null answer means the worker never replied — it was restarting, or the extension
@@ -305,6 +312,9 @@ export const usePanel = create<PanelState>((set, get) => ({
         ...get().find,
         status: 'done',
         error: null,
+        page: result.data.page,
+        total: result.data.total,
+        hasMore: result.data.hasMore,
         releases: result.data.releases,
         tracks,
       },
@@ -312,8 +322,10 @@ export const usePanel = create<PanelState>((set, get) => ({
 
     log.info('find', 'search done', {
       query,
+      language,
+      page: result.data.page,
+      of: result.data.total,
       releases: result.data.releases.length,
-      expanded: result.data.expanded.length,
     });
   },
 
@@ -329,7 +341,7 @@ export const usePanel = create<PanelState>((set, get) => ({
     const result = await askBackground<ApiResult<ReleaseResponse>>({
       kind: 'api:release',
       path: release.path,
-      langs: get().languages,
+      lang: get().language,
     });
 
     const done = get().find;

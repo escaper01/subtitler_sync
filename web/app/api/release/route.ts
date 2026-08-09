@@ -1,14 +1,14 @@
-import { fail, fromError, json, parseLanguages, parsePath, preflight } from '@/lib/api';
+import { fail, fromError, json, parseLanguage, parsePath, preflight } from '@/lib/api';
 import { filterByLanguage, releaseTracks } from '@/lib/subtitlecat';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * `GET /api/release?path=subs/45/Some.Release.html&langs=en,fr`
+ * `GET /api/release?path=subs/45/Some.Release.html&lang=en`
  *
- * The languages of one release. Called when the user opens a release the search did not
- * expand eagerly.
+ * One release's subtitle in one language. Search expands every release on the page, so
+ * this is only reached when a client asks for a release directly.
  */
 export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
@@ -16,12 +16,12 @@ export async function GET(request: Request): Promise<Response> {
   const path = parsePath(params.get('path'));
   if (!path) return fail('Which release?', 400);
 
+  const language = parseLanguage(params.get('lang'));
+  if (!language) return fail('Pick a supported language', 400);
+
   try {
     const release = await releaseTracks(path);
-    return json({
-      ...release,
-      tracks: filterByLanguage(release.tracks, parseLanguages(params.get('langs'))),
-    });
+    return json({ ...release, tracks: filterByLanguage(release.tracks, language) });
   } catch (err) {
     return fromError(err);
   }

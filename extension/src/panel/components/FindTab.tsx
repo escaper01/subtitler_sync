@@ -1,51 +1,54 @@
 import { useState } from 'react';
 import type { Release } from '@/lib/api-types';
+import { PAGE_SIZE } from '@/lib/api-types';
 import { usePanel, trackKey } from '@/panel/store';
-import { Button } from '@/panel/components/ui';
+import { Button, TextInput } from '@/panel/components/ui';
 import { LanguagePicker } from '@/panel/components/LanguagePicker';
+
+/** Matches the API's own limit, so over-long titles are rejected before a round trip. */
+const MAX_QUERY_LENGTH = 100;
 
 /**
  * Search subtitlecat for a track instead of supplying one.
  *
  * The shape follows what the search actually returns: a list of *releases* (someone's
- * upload, named after the video file it was timed against), each holding one subtitle per
- * language. The best few arrive already expanded, so the common case — search, take the
- * English one off the top result — is one click after the search.
+ * upload, named after the video file it was timed against), each holding one subtitle in
+ * the chosen language. Five per page, all expanded, so taking the top one is a single
+ * click after the search.
  *
  * Picking a release by its filename is not cosmetic: a track timed against the same rip
  * you are watching needs no syncing at all.
  */
 export function FindTab() {
   const find = usePanel((s) => s.find);
-  const languages = usePanel((s) => s.languages);
-  const setLanguages = usePanel((s) => s.setLanguages);
+  const language = usePanel((s) => s.language);
+  const setLanguage = usePanel((s) => s.setLanguage);
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
+
+  const searching = find.status === 'searching';
 
   return (
     <div className="space-y-2.5">
       <div className="flex gap-1.5">
-        <input
-          type="text"
+        <TextInput
           value={find.query}
+          onChange={setQuery}
+          onEnter={() => void runSearch()}
           placeholder="Film or series name"
-          spellCheck={false}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void runSearch();
-          }}
-          className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-1.5 py-1 text-[11px] text-white/85 outline-none placeholder:text-white/25 focus:border-sky-400/60"
+          maxLength={MAX_QUERY_LENGTH}
+          className="min-w-0 flex-1"
         />
-        <LanguagePicker selected={languages} onChange={setLanguages} />
+        <LanguagePicker selected={language} onChange={setLanguage} />
       </div>
 
       <Button
         size="sm"
         variant="primary"
         onClick={() => void runSearch()}
-        disabled={find.query.trim().length === 0 || find.status === 'searching'}
+        disabled={find.query.trim().length < 2 || searching}
       >
-        {find.status === 'searching' ? 'Searching…' : 'Search'}
+        {searching ? 'Searching…' : 'Search'}
       </Button>
 
       {find.error && <p className="text-[11px] text-red-300">{find.error}</p>}
@@ -57,13 +60,13 @@ export function FindTab() {
 
 function Results() {
   const find = usePanel((s) => s.find);
+  const runSearch = usePanel((s) => s.runSearch);
 
   if (find.status === 'idle') {
     return (
       <p className="text-[10px] leading-relaxed text-white/30">
-        Searches subtitlecat.com. Results are filtered to your chosen languages — most of them
-        are machine translations, so prefer a release whose filename matches what you are
-        watching.
+        Searches subtitlecat.com in your chosen language. Most subtitles there are machine
+        translations, so prefer a release whose filename matches what you are watching.
       </p>
     );
   }
@@ -80,12 +83,39 @@ function Results() {
     );
   }
 
+  const first = (find.page - 1) * PAGE_SIZE + 1;
+  const last = first + find.releases.length - 1;
+
   return (
-    <ul className="space-y-1">
-      {find.releases.map((release) => (
-        <ReleaseRow key={release.id} release={release} />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul className="space-y-1">
+        {find.releases.map((release) => (
+          <ReleaseRow key={release.id} release={release} />
+        ))}
+      </ul>
+
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-[10px] text-white/30">
+          {first}–{last} of {find.total}
+        </span>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void runSearch(find.page - 1)}
+          disabled={find.page <= 1}
+        >
+          Back
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => void runSearch(find.page + 1)}
+          disabled={!find.hasMore}
+        >
+          More
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -95,7 +125,7 @@ function ReleaseRow({ release }: { release: Release }) {
   const loadTrack = usePanel((s) => s.loadTrack);
 
   const tracks = find.tracks[release.id];
-  // Anything the search expanded starts open; the rest are fetched on first click.
+  // Everything on a page arrives expanded, so a row starts open unless its fetch failed.
   const [open, setOpen] = useState(tracks !== undefined);
   const busy = find.expanding.includes(release.id);
 
@@ -126,12 +156,10 @@ function ReleaseRow({ release }: { release: Release }) {
 
       {open && (
         <div className="border-t border-white/5 px-2 py-1">
-          {busy && <p className="py-1 text-[10px] text-white/35">Loading languages…</p>}
+          {busy && <p className="py-1 text-[10px] text-white/35">Loading…</p>}
 
           {!busy && tracks !== undefined && tracks.length === 0 && (
-            <p className="py-1 text-[10px] text-white/35">
-              Nothing here in your languages.
-            </p>
+            <p className="py-1 text-[10px] text-white/35">Not available in this language.</p>
           )}
 
           {!busy &&

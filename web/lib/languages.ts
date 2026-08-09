@@ -55,7 +55,7 @@ export const LANGUAGES: readonly Language[] = [
 ];
 
 /** The language assumed when a user has never opened the picker. */
-export const DEFAULT_LANGUAGES: readonly string[] = ['en'];
+export const DEFAULT_LANGUAGE = 'en';
 
 const BY_CODE = new Map(LANGUAGES.map((language) => [language.code, language]));
 
