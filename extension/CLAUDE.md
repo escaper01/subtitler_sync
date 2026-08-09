@@ -97,7 +97,8 @@ npm install
 npm run dev      # Vite watch + HMR for the panel UI
 npm run build    # production build into dist/
 npm run test     # vitest: parser, timing maths, cue lookup, allowlist matching
-npm run check    # typecheck + tests + build, i.e. everything
+npm run check    # typecheck + tests + build + verify, i.e. everything
+npm run verify   # assert dist/ is loadable — see the entry-basename gotcha
 npm run icons    # regenerate public/icons/* from tools/make-icons.mjs
 ```
 
@@ -184,10 +185,10 @@ src/
     log.ts               console logger, off unless the page flag is set
 
   background/
-    index.ts             message router, per-tab detection hints for the popup
+    service-worker.ts    message router, per-tab detection hints for the popup
 
   content/
-    index.ts             entry: runs in EVERY frame, gates on the allowlist, owns the session
+    content-script.ts    entry: runs in EVERY frame, gates on the allowlist, owns the session
     video-agent.ts       finds the film's <video> in this frame
     overlay.ts           shadow-DOM renderer, rect tracking, fullscreen handling
     panel-host.ts        mounts the React panel — only in the frame that owns the video
@@ -203,9 +204,9 @@ tools/make-icons.mjs     the generator
 
 | Context | Files | Notes |
 |---|---|---|
-| Every frame | `content/index.ts`, `lib/sites.ts` | `all_frames: true`, `document_start`; stands down unless the site is allowed |
+| Every frame | `content/content-script.ts`, `lib/sites.ts` | `all_frames: true`, `document_start`; stands down unless the site is allowed |
 | The video's frame | `content/overlay.ts`, `content/panel-host.ts`, `panel/*` | whichever frame won detection |
-| Service worker | `background/index.ts` | the only context that can see the whole tab |
+| Service worker |  `background/service-worker.ts` | the only context that can see the whole tab |
 | Extension page | `popup/*` | the toolbar popup |
 
 ---
@@ -234,7 +235,7 @@ All message shapes live in the `ToBackground` / `ToContent` / `ToBackgroundFromP
 `src/types.ts`.
 
 **To add a message type:** add a variant to the relevant union, then handle it in
-`background/index.ts`'s router and in whichever context receives it. Those `switch` statements
+`background/service-worker.ts`'s router and in whichever context receives it. Those `switch` statements
 have no `default` case on purpose — keep it that way, so an unhandled variant is a type error.
 
 The service worker is suspended after ~30s idle, so **nothing may assume its in-memory state
@@ -349,6 +350,15 @@ Each of these has cost real debugging time. They are handled in the code; don't 
 
 - **Register `chrome.runtime` listeners once, outside the session.** The session is built and torn
   down every time the allowlist changes, and a listener registered inside it leaks one per toggle.
+
+- **Entry points must not share a basename.** Rollup names each output chunk after its entry's
+  basename, so `background/index.ts` and `content/index.ts` both emitted `index.ts-<hash>.js` —
+  and the generated `service-worker-loader.js` bound to the *content script*. The worker then ran
+  content-script code, threw on `window` (a worker has none) before registering any listener, and
+  every `sendMessage` failed with "Receiving end does not exist" from then on. Nothing logs it:
+  the extension just stops answering, and the API is never called. Hence the entries are named
+  `service-worker.ts` and `content-script.ts`, and `npm run verify` asserts each loader resolves
+  to a chunk built from the entry it names.
 
 ---
 

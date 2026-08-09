@@ -26,7 +26,11 @@ export default defineManifest({
   },
 
   background: {
-    service_worker: 'src/background/index.ts',
+    // Entry basenames must stay unique across entry points. Rollup names output chunks
+    // after the entry's basename, so two files both called `index.ts` collide and the
+    // generated service-worker loader can end up importing the *content script* — which
+    // throws on `window` in a worker and silently registers no message listener at all.
+    service_worker: 'src/background/service-worker.ts',
     type: 'module',
   },
 
@@ -41,7 +45,7 @@ export default defineManifest({
       all_frames: true,
       match_about_blank: true,
       run_at: 'document_start',
-      js: ['src/content/index.ts'],
+      js: ['src/content/content-script.ts'],
     },
   ],
 
