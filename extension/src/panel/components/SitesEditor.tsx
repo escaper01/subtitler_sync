@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@/panel/components/ui';
+import { Button, TextInput } from '@/panel/components/ui';
 import {
   allowSite,
   blockHost,
@@ -18,7 +18,9 @@ import {
  */
 export function SitesEditor({ currentHost }: { currentHost: string | null }) {
   const [sites, setSites] = useState<string[] | null>(null);
-  const [draft, setDraft] = useState('');
+  // Seeded with the site you are on, since that is the one you are nearly always adding.
+  // Typing a domain by hand on a phone-sized panel over a video is nobody's idea of fun.
+  const [draft, setDraft] = useState(() => normalizeDomain(currentHost ?? '') ?? '');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -111,19 +113,16 @@ export function SitesEditor({ currentHost }: { currentHost: string | null }) {
       </div>
 
       <div className="flex gap-1.5">
-        <input
-          type="text"
+        <TextInput
           value={draft}
-          placeholder="example.com"
-          spellCheck={false}
-          onChange={(e) => {
-            setDraft(e.target.value);
+          onChange={(value) => {
+            setDraft(value);
             setError(null);
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') void add();
-          }}
-          className="min-w-0 flex-1 rounded border border-white/10 bg-black/40 px-1.5 py-1 font-mono text-[11px] text-white/80 outline-none placeholder:text-white/25 focus:border-sky-400/60"
+          onEnter={() => void add()}
+          placeholder={currentHost ?? 'example.com'}
+          maxLength={253}
+          className="min-w-0 flex-1 font-mono"
         />
         <Button size="sm" onClick={() => void add()} disabled={draft.trim().length === 0}>
           Add
