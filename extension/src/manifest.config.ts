@@ -3,9 +3,12 @@ import pkg from '../package.json' with { type: 'json' };
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Subtitler',
+  name: 'Subtitle Synchronizer',
   version: pkg.version,
-  description: pkg.description,
+  // 132 characters is the Web Store's hard limit for the listing summary, and it is
+  // truncated in search results well before that. Keep this one line.
+  description:
+    'Add subtitles to any video: load your own SRT/VTT or find one online, then fix the timing with a click.',
 
   icons: {
     16: 'icons/icon16.png',
