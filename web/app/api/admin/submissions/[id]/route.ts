@@ -1,7 +1,6 @@
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/authOptions';
 import { db } from '@/lib/db';
 import { fail, json } from '@/lib/api';
+import { requireAdmin } from '@/lib/requireAdmin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,8 +18,8 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
-  const session = await getServerSession(authOptions);
-  if (!session) return fail('Not signed in', 401);
+  const gate = await requireAdmin();
+  if (!gate.ok) return gate.response;
 
   const { id } = await params;
 
