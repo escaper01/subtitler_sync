@@ -1,0 +1,30 @@
+{
+  "name": "subtitler-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Subtitle search API for the Subtitler extension, plus its admin dashboard.",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "next": "^15.5.23",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "swr": "^2.4.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}
