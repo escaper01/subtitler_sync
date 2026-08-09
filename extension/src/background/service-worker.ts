@@ -1,7 +1,8 @@
 import type { TabState, ToBackground, ToBackgroundFromPopup } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
 import { broadcastToTab, onMessage } from '@/lib/messaging';
-import { downloadSubtitle, fetchRelease, searchSubtitles } from '@/lib/api';
+import { apiBase, downloadSubtitle, fetchRelease, searchSubtitles } from '@/lib/api';
+import { clearAuth, listenForToken, loadAuth } from '@/background/auth';
 
 /**
  * Service worker.
@@ -54,6 +55,11 @@ function forget(tabId: number): void {
 
 /* ------------------------------------------------------------------- lifecycle */
 
+// Top level, synchronously, on purpose: MV3 only wakes a suspended worker for listeners
+// registered during script evaluation. Registered any later, the sign-in handoff would
+// simply never arrive, with nothing anywhere saying why.
+listenForToken();
+
 chrome.tabs.onRemoved.addListener(forget);
 
 // A tab that starts loading a new page has thrown away whatever we knew about it.
@@ -101,6 +107,19 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
       return downloadSubtitle(message.path);
     }
 
+    case 'auth:state': {
+      return loadAuth().then((auth) => ({ signedIn: auth !== null }));
+    }
+
+    case 'auth:open-signin': {
+      // The panel is a content script and cannot open a tab; the worker can.
+      return openSignIn().then(() => ({ ok: true }));
+    }
+
+    case 'auth:sign-out': {
+      return clearAuth().then(() => ({ ok: true }));
+    }
+
     case 'popup:get-tab-state': {
       return hydrated.then(() => tabs.get(message.tabId) ?? EMPTY_TAB_STATE);
     }
@@ -118,3 +137,10 @@ chrome.commands.onCommand.addListener((command, tab) => {
     void broadcastToTab(tab.id, { kind: 'toggle-panel' });
   }
 });
+
+/* ---------------------------------------------------------------------- signin */
+
+/** Open the site's handoff page, which signs the user in and passes a token back. */
+async function openSignIn(): Promise<void> {
+  await chrome.tabs.create({ url: new URL('connect', `${await apiBase()}/`).toString() });
+}

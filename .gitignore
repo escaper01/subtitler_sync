@@ -4,6 +4,12 @@ dist/
 .DS_Store
 .vite/
 
+# extension/
+# The extension's private signing key. It fixes the extension's identity, so leaking it
+# lets someone else publish as us — and losing it means the published extension can never
+# be updated. Back it up outside the repo. Only the public half belongs in the manifest.
+key.pem
+
 # web/
 .next/
 .env

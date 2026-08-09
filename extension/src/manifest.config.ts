@@ -10,6 +10,23 @@ export default defineManifest({
   description:
     'Add subtitles to any video: load your own SRT/VTT or find one online, then fix the timing with a click.',
 
+  // Pins the extension's identity. Without it Chrome invents a fresh id on every load,
+  // and the website — which must name a specific extension to hand the sign-in token to —
+  // would be talking to a stranger. This is the PUBLIC half of `extension/key.pem`;
+  // regenerate both with `npm run key`, and upload the same key to the Web Store or the
+  // published id will not match the one the site is configured for.
+  //
+  // id: gpifnmbipbmkkmpnbcmdlehjbpoheidj
+  key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoAARRNo/ke0MXTPpDEub6/zvJa9zyJjN6EDC6JW5iQBC7c2D4kqaZGgpOOztqEqmLRrBQOFwnwEtCmHTWwIM6NEIAs6TI5oBkrILrQtZexE/QOOED0hukMcrVbRJ6f6kuMuSPNChB39+lrpTU0LM/LmPJk/fXKDJ7pUtebuETKSdf3dtgyJe0a+Rp3LUpmXN/ODriILdL8f6BzpIgsr98iYzppAdwLAH1PeJLnzHhoCCvqNoJ3UB5rC3mQiU0IFs2XLAYWeTCsfeLGGTHG0XNszx7/93+Rq7Cym04MEq7cu2Yci2hhS6Z6m7bfAjS7iJt1k+wn3PUyhtlOqUiddHIwIDAQAB',
+
+  // Which sites may message this extension. Used by the sign-in handoff: our own page
+  // calls `chrome.runtime.sendMessage(<id>, …)` to pass the token over. It cannot be
+  // `<all_urls>` — full origins only — and anything not listed here is silently ignored,
+  // which is the point.
+  externally_connectable: {
+    matches: ['http://localhost:3000/*', 'https://*.vercel.app/*'],
+  },
+
   icons: {
     16: 'icons/icon16.png',
     32: 'icons/icon32.png',

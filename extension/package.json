@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "icons": "node tools/make-icons.mjs",
+    "key": "node tools/make-key.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

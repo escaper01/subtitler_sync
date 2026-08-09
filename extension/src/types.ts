@@ -119,7 +119,17 @@ export type ToBackground =
    */
   | { kind: 'api:search'; query: string; lang: string; page: number }
   | { kind: 'api:release'; path: string; lang: string }
-  | { kind: 'api:download'; path: string };
+  | { kind: 'api:download'; path: string }
+  /**
+   * Sign-in state and controls.
+   *
+   * The token itself never crosses this channel — it is written straight into
+   * `chrome.storage.local` by the worker's `onMessageExternal` listener and read only
+   * there, so the panel never holds a credential it has no use for.
+   */
+  | { kind: 'auth:state' }
+  | { kind: 'auth:open-signin' }
+  | { kind: 'auth:sign-out' };
 
 /** background → content script */
 export type ToContent = { kind: 'toggle-panel' };
