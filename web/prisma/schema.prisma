@@ -1,0 +1,58 @@
+// Submissions from the extension and the public site.
+//
+// One table, not two: a bug report and a feature request differ only by a label and are
+// read from the same queue. Splitting them would double every query for nothing.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Prisma 7 no longer accepts `url` here. The connection string lives in prisma.config.ts
+// for the CLI, and reaches the client through a driver adapter — see lib/db.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+enum SubmissionKind {
+  REPORT
+  FEATURE
+}
+
+enum SubmissionStatus {
+  NEW
+  REVIEWED
+  RESOLVED
+  DISMISSED
+}
+
+model Submission {
+  id     String           @id @default(cuid())
+  kind   SubmissionKind
+  status SubmissionStatus @default(NEW)
+
+  /// What they wrote. The only required field.
+  message String
+
+  /// Optional: no reply is possible without it, but demanding one suppresses reports.
+  email String?
+
+  /// Free-text context the reporter gave — which film, which site.
+  subject String?
+
+  /// Filled in automatically when the report comes from the extension.
+  extensionVersion String?
+  /// The site they were on. Sensitive enough to be worth stating plainly in the UI.
+  siteDomain String?
+  /// Anonymous per-install id, so repeated reports from one person can be recognised.
+  installId String?
+
+  /// Admin's own notes, never shown to the submitter.
+  note String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // The queue is read newest-first and filtered by status; both are covered here.
+  @@index([status, createdAt])
+  @@index([kind, createdAt])
+}

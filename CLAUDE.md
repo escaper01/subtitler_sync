@@ -45,9 +45,14 @@ place where neither typechecker is looking.
 
 ## Status
 
-Working: the overlay, the sync tool, the site allowlist, subtitle search and one-click loading.
+Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click loading,
+the public site, and the admin dashboard at `/admin` (submissions queue + the API reference).
+
+Needs configuration before `/admin` or feedback will run — see `web/.env.example`: a Postgres
+`DATABASE_URL`, a Google OAuth client, `NEXTAUTH_SECRET`, and `ADMIN_EMAILS`. The scraping API
+works without any of them.
 
 Not built yet, in this order: licence keys (`X-Subtitler-Key`, checked server-side, rate limited
-per key), telemetry, then the admin dashboard at `/admin`. The API is shaped for them — the CORS
-allowlist already names the key and install headers — but none of it is wired up, and **subtitle
-search is currently free to anyone who points the extension at the API.**
+per key), then telemetry. The API is shaped for them — the CORS allowlist already names the key
+and install headers — but none of it is wired up, and **subtitle search is currently free to
+anyone who points the extension at the API.**

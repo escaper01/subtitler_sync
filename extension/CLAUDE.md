@@ -287,11 +287,15 @@ The search box is *seeded* from the tab's title via `guessSearchTitle`, never se
 automatically: the guess is often right and sometimes comically wrong, and the user is looking
 straight at an editable input either way.
 
-**Preferred languages** live in `storage.sync` under `langs` and default to `['en']`. An empty
-list is never stored — the API reads "no languages" as "no filter", so unticking everything would
-return all ~150 machine translations rather than none, which is the opposite of what was meant.
-Changing the selection drops the fetched per-release tracks, because those were filtered by the
-old set and are now wrong.
+**One language, not several.** It lives in `storage.sync` under `langs` and defaults to `en`; the
+loader still accepts the array earlier versions wrote and takes its first entry, so nobody's
+choice is silently reset. The API takes exactly one language and rejects codes it does not
+offer. Changing the language re-runs the search rather than clearing it — the query has not
+changed and the search itself is cached upstream, so it costs only the detail fetches.
+
+Results are paged, five per page, and every release on a page arrives expanded. That bound is
+the point: without it a search for a popular film meant thirty-odd detail fetches against
+someone else's server.
 
 ---
 
@@ -350,6 +354,14 @@ Each of these has cost real debugging time. They are handled in the code; don't 
 
 - **Register `chrome.runtime` listeners once, outside the session.** The session is built and torn
   down every time the allowlist changes, and a listener registered inside it leaks one per toggle.
+
+- **Typing over a video needs help.** Players bind space to play/pause, and often do it from a
+  `document` listener in the **capture** phase — which runs before the event reaches our input
+  and calls `preventDefault()` to stop the page scrolling, cancelling the character insertion
+  too. The space then never appears, and which player is underneath decides whether it works.
+  `TextInput` in `panel/components/ui.tsx` handles it: every key event stops at the panel, and a
+  space that was already cancelled upstream is inserted by hand with the caret restored. Use
+  `TextInput` for panel inputs rather than a bare `<input>`.
 
 - **Entry points must not share a basename.** Rollup names each output chunk after its entry's
   basename, so `background/index.ts` and `content/index.ts` both emitted `index.ts-<hash>.js` —

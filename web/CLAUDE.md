@@ -30,17 +30,61 @@ Next 16, and neither surface is used here.
 ## The API
 
 ```
-GET /api/search?q=<title>&langs=en,fr    releases + the best few already expanded
-GET /api/release?path=<release>&langs=…  one release's languages
-GET /api/download?path=<srt>             the subtitle text itself
+GET  /api/search?q=<title>&lang=en&page=1   one page of releases, each already expanded
+GET  /api/release?path=<release>&lang=en    one release, one language
+GET  /api/download?path=<srt>               the subtitle text itself
+POST /api/feedback                          bug reports and feature requests (public)
 ```
 
-`langs` filters to those codes; **empty means no filter**, which returns every machine
-translation the site has. The extension always sends at least `en`.
+**Exactly one language, and it must be one we offer.** An unknown code is a 400, not an
+empty result: silently filtering everything away is indistinguishable from "this film has
+no subtitles", which is a far worse thing to debug than an error. `q` is 2–100 characters
+with whitespace collapsed, so `"  the   matrix "` and `"the matrix"` are one cache entry.
+
+A page is `PAGE_SIZE` (5) releases and **every release on it is expanded**, so a page is
+also the unit of upstream work: one search fetch plus five detail fetches, regardless of
+how many releases matched. That bound is the reason paging exists — 31 results used to
+mean 31 potential detail fetches.
 
 CORS is `*` on purpose: the caller is an opaque `chrome-extension://` origin that cannot be
 allowlisted usefully. There are no cookies — the licence key will travel in a header — so
 credentials stay off and `*` remains safe.
+
+## Admin
+
+`/admin` is the submissions queue; `/admin/api` is the API reference, which used to sit on
+the public home page. Both are gated in `middleware.ts` — server-side, before the route is
+served. A client-side guard would still ship the page bundle to a stranger.
+
+Auth is NextAuth + Google against `ADMIN_EMAILS`, a comma-separated env var. There is no
+user table and no roles, because there is exactly one kind of user. `isAdmin` is re-derived
+from the allowlist on **every** token refresh, so removing an address ends that session's
+access at its next request rather than whenever it would have expired.
+
+`/api/admin/*` re-checks the session itself. Middleware only covers `/admin/*` pages; a
+mutating route under `/api/*` has to answer for itself rather than trust something upstream
+ran.
+
+Env validation happens at *request* time (`assertAuthEnv`), not at import. Validating at
+module load meant `next build` needed the production secrets just to collect page data.
+
+## Database
+
+Prisma 7 + Postgres. One table, `Submission`, holding both bug reports and feature requests
+— they differ by a label and are read from one queue.
+
+Prisma 7 **removed `url` from the datasource block**: the connection string now lives in
+`prisma.config.ts` for the CLI, and reaches the client through a driver adapter
+(`@prisma/adapter-pg`) in `lib/db.ts`. Those are two separate paths now; setting only one
+gets you a CLI that migrates fine and an app that cannot connect.
+
+```bash
+cp .env.example .env.local     # then fill in DATABASE_URL and the auth values
+npx prisma migrate dev --name init
+```
+
+Without `DATABASE_URL` the site still builds and the scraping API still works — only
+`/admin` and `POST /api/feedback` fail, and both say so rather than showing a stack trace.
 
 ## Scraping subtitlecat
 
