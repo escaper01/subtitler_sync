@@ -42,7 +42,7 @@ export function StatusControl({ id, status }: { id: string; status: string }) {
         defaultValue={status}
         disabled={pending}
         onChange={(event) => void change(event.target.value)}
-        className="rounded border border-white/10 bg-neutral-900 px-1.5 py-0.5 text-xs text-neutral-300 outline-none focus:border-sky-400/60 disabled:opacity-50"
+        className="rounded border border-line bg-surface-2 px-1.5 py-0.5 text-xs text-text/90 outline-none focus:border-accent disabled:opacity-50"
       >
         {STATUSES.map((value) => (
           <option key={value} value={value}>

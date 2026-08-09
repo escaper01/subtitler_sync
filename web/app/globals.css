@@ -1,1 +1,120 @@
 @import 'tailwindcss';
+
+/*
+ * Theme.
+ *
+ * Class-based rather than media-query-based, because the header carries an explicit
+ * toggle — a user who picks light on a dark-set OS must get light.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The palette encodes sync state, which is the whole subject: amber is a subtitle that has
+ * drifted, sky is one that lands on the word. They are used for nothing else, so a colour
+ * on this site always means something.
+ *
+ * Ink (#0b1220) is the extension's own icon tile, so the site and the product are visibly
+ * the same thing.
+ */
+:root {
+  --surface: #f5f7fa;
+  --surface-2: #ffffff;
+  --surface-3: #eef2f7;
+  --line: #dbe3ed;
+  --text: #0b1220;
+  --muted: #55637a;
+  --accent: #0369a1;
+  --accent-solid: #0284c7;
+  --drift: #b45309;
+  --frame: #0b1220;
+}
+
+.dark {
+  --surface: #0b1220;
+  --surface-2: #111b2c;
+  --surface-3: #16233a;
+  --line: #22304a;
+  --text: #e8eef7;
+  --muted: #93a3bc;
+  --accent: #38bdf8;
+  --accent-solid: #0ea5e9;
+  --drift: #fbbf24;
+  --frame: #05090f;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-solid: var(--accent-solid);
+  --color-drift: var(--drift);
+  --color-frame: var(--frame);
+
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-face), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--surface);
+    color: var(--text);
+  }
+
+  /* Keyboard focus must stay visible everywhere; nothing here removes outlines. */
+  :focus-visible {
+    outline: 2px solid var(--accent-solid);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/*
+ * The hero's caption slides late, hangs there, then snaps onto the word — the drift this
+ * whole thing exists to fix, shown rather than described. One loop of the product's thesis.
+ */
+@keyframes drift-and-snap {
+  0%,
+  8% {
+    transform: translateX(0);
+    color: var(--accent);
+  }
+  /* Sliding out of time. */
+  30%,
+  58% {
+    transform: translateX(clamp(28px, 9vw, 74px));
+    color: var(--drift);
+  }
+  /* The click. */
+  66%,
+  100% {
+    transform: translateX(0);
+    color: var(--accent);
+  }
+}
+
+.animate-drift {
+  animation: drift-and-snap 7s cubic-bezier(0.7, 0, 0.2, 1) infinite;
+}

@@ -15,10 +15,10 @@ export const dynamic = 'force-dynamic';
 const STATUSES = ['NEW', 'REVIEWED', 'RESOLVED', 'DISMISSED'] as const;
 
 const STATUS_STYLE: Record<string, string> = {
-  NEW: 'bg-sky-500/15 text-sky-300 border-sky-400/30',
+  NEW: 'bg-accent/10 text-accent border-accent/30',
   REVIEWED: 'bg-amber-500/15 text-amber-300 border-amber-400/30',
   RESOLVED: 'bg-emerald-500/15 text-emerald-300 border-emerald-400/30',
-  DISMISSED: 'bg-white/5 text-neutral-500 border-white/10',
+  DISMISSED: 'bg-surface-3 text-muted border-line',
 };
 
 export default async function AdminPage({
@@ -54,8 +54,8 @@ export default async function AdminPage({
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <div className="flex items-baseline gap-3">
-        <h1 className="text-xl font-semibold text-white">Submissions</h1>
-        <span className="text-sm text-neutral-500">
+        <h1 className="font-display text-2xl font-bold tracking-tight">Submissions</h1>
+        <span className="text-sm text-muted">
           {submissions.length}
           {filter ? ` ${filter.toLowerCase()}` : ''}
         </span>
@@ -80,14 +80,14 @@ export default async function AdminPage({
       )}
 
       {!error && submissions.length === 0 && (
-        <p className="mt-6 text-sm text-neutral-500">Nothing here.</p>
+        <p className="mt-6 text-sm text-muted">Nothing here.</p>
       )}
 
       <ul className="mt-6 space-y-3">
         {submissions.map((item) => (
-          <li key={item.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <li key={item.id} className="rounded-xl border border-line bg-surface-2 p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-[11px] font-medium text-neutral-300">
+              <span className="rounded border border-line bg-surface-3 px-1.5 py-0.5 text-[11px] font-medium text-text/90">
                 {item.kind === 'REPORT' ? 'Bug' : 'Feature'}
               </span>
               <span
@@ -96,18 +96,18 @@ export default async function AdminPage({
                 {item.status.toLowerCase()}
               </span>
               {item.subject && (
-                <span className="text-sm font-medium text-white">{item.subject}</span>
+                <span className="text-sm font-medium text-text">{item.subject}</span>
               )}
-              <span className="ml-auto text-xs text-neutral-600">
+              <span className="ml-auto text-xs text-muted">
                 {item.createdAt.toISOString().slice(0, 16).replace('T', ' ')}
               </span>
             </div>
 
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-neutral-300">
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-text/90">
               {item.message}
             </p>
 
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-neutral-500">
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
               {item.email && <span>{item.email}</span>}
               {item.siteDomain && <span>site: {item.siteDomain}</span>}
               {item.extensionVersion && <span>v{item.extensionVersion}</span>}
@@ -137,8 +137,8 @@ function FilterLink({
       href={href}
       className={`rounded-lg border px-2.5 py-1 text-xs transition-colors ${
         active
-          ? 'border-sky-400/40 bg-sky-500/15 text-sky-200'
-          : 'border-white/10 text-neutral-400 hover:text-white'
+          ? 'border-accent/40 bg-accent/10 text-accent'
+          : 'border-line text-muted hover:text-text'
       }`}
     >
       {label}

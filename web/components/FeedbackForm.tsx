@@ -26,10 +26,14 @@ export function FeedbackForm({
 
   if (state === 'sent') {
     return (
-      <p className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-        Thank you — that came through.
-        {email ? ' I will reply if there is something to say.' : ''}
-      </p>
+      <div className="rounded-2xl border border-accent/40 bg-accent/[0.07] px-5 py-4">
+        <p className="font-display font-bold tracking-tight">That came through.</p>
+        <p className="mt-1 text-sm leading-relaxed text-muted">
+          {email
+            ? 'I will reply if there is something to say.'
+            : 'No email given, so there is no way to reply — that is fine, it is still read.'}
+        </p>
+      </div>
     );
   }
 
@@ -60,7 +64,7 @@ export function FeedbackForm({
   };
 
   const field =
-    'w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-sky-400/60';
+    'w-full rounded-xl border border-line bg-surface-2 px-3.5 py-2.5 text-sm outline-none placeholder:text-muted/70 focus:border-accent';
 
   return (
     <form onSubmit={submit} className="space-y-3">
@@ -92,12 +96,12 @@ export function FeedbackForm({
         className={field}
       />
 
-      {error && <p className="text-sm text-red-300">{error}</p>}
+      {error && <p className="text-sm text-drift">{error}</p>}
 
       <button
         type="submit"
         disabled={state === 'sending' || message.trim().length < 10}
-        className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-sky-400 disabled:cursor-not-allowed disabled:opacity-40"
+        className="rounded-xl bg-accent-solid px-5 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
       >
         {state === 'sending' ? 'Sending…' : 'Send'}
       </button>

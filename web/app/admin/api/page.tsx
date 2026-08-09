@@ -11,8 +11,8 @@ import { PAGE_SIZE } from '@/lib/api-types';
 export default function ApiDocPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <h1 className="text-xl font-semibold text-white">API</h1>
-      <p className="mt-2 text-sm text-neutral-400">
+      <h1 className="font-display text-2xl font-bold tracking-tight">API</h1>
+      <p className="mt-2 text-sm text-muted">
         What the extension calls. All three are GET, CORS-open, and currently unauthenticated.
       </p>
 
@@ -55,11 +55,11 @@ export default function ApiDocPage() {
       />
 
       <section className="mt-10">
-        <h2 className="text-sm font-medium text-white">
+        <h2 className="text-sm font-medium text-text">
           Supported languages
-          <span className="ml-2 font-normal text-neutral-500">{LANGUAGES.length}</span>
+          <span className="ml-2 font-normal text-muted">{LANGUAGES.length}</span>
         </h2>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-muted">
           subtitlecat&rsquo;s codes, which are Google-style: Hebrew is <code>iw</code>, Chinese
           splits into <code>zh-CN</code> and <code>zh-TW</code>, Norwegian is <code>no</code>.
         </p>
@@ -67,10 +67,10 @@ export default function ApiDocPage() {
           {LANGUAGES.map((language) => (
             <span
               key={language.code}
-              className="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 text-xs text-neutral-400"
+              className="rounded border border-line bg-surface-3 px-1.5 py-0.5 text-xs text-muted"
             >
               {language.name}
-              <span className="ml-1 font-mono text-neutral-600">{language.code}</span>
+              <span className="ml-1 font-mono text-muted">{language.code}</span>
             </span>
           ))}
         </div>
@@ -91,17 +91,17 @@ function Endpoint({
   notes: string[];
 }) {
   return (
-    <section className="mt-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+    <section className="mt-6 rounded-xl border border-line bg-surface-2 p-4">
       <div className="flex items-baseline gap-2 overflow-x-auto">
-        <span className="shrink-0 rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-[11px] text-sky-300">
+        <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 font-mono text-[11px] text-accent">
           {method}
         </span>
-        <code className="whitespace-nowrap font-mono text-xs text-neutral-200">{path}</code>
+        <code className="whitespace-nowrap font-mono text-xs text-text">{path}</code>
       </div>
-      <p className="mt-2 text-sm text-neutral-400">{summary}</p>
+      <p className="mt-2 text-sm text-muted">{summary}</p>
       <ul className="mt-2 space-y-1">
         {notes.map((note) => (
-          <li key={note} className="text-xs leading-relaxed text-neutral-500">
+          <li key={note} className="text-xs leading-relaxed text-muted">
             {note}
           </li>
         ))}
