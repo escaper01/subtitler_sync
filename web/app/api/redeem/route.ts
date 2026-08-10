@@ -1,5 +1,6 @@
 import { denied, fail, json, preflight } from '@/lib/api';
 import { redeemCode } from '@/lib/codes';
+import { checkLimit, LIMITS } from '@/lib/rateLimit';
 import { optionalViewer } from '@/lib/gate';
 import { SITE_URL } from '@/lib/site';
 
@@ -34,6 +35,19 @@ export async function POST(request: Request): Promise<Response> {
     return fail('Which code?', 400);
   }
   if (raw.length > 64) return fail('That is not a code', 400);
+
+  // Bounds guessing. 60-bit codes make a scan hopeless anyway; this makes it pointless,
+  // and keeps a wrong-code typo loop from filling the redemption log.
+  const limit = await checkLimit({ ...LIMITS.redeemPerHour, subject: viewer.userId });
+  if (!limit.allowed) {
+    return denied(
+      'rate_limited',
+      'Too many attempts. Try again in a little while.',
+      429,
+      undefined,
+      limit.retryAfter,
+    );
+  }
 
   const result = await redeemCode(raw, viewer.userId);
 

@@ -1,4 +1,5 @@
-import { fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
+import { denied, fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
+import { checkLimit, LIMITS } from '@/lib/rateLimit';
 import { searchExpanded } from '@/lib/subtitlecat';
 import { enforcing, optionalViewer, requireEntitlement, type Viewer } from '@/lib/gate';
 import { logSearch } from '@/lib/searchLog';
@@ -37,6 +38,21 @@ export async function GET(request: Request): Promise<Response> {
       return gate.response;
     }
     viewer = gate.viewer;
+
+    // Only meaningful once there is an account to attribute searches to.
+    for (const limit of [LIMITS.searchPerHour, LIMITS.searchPerDay]) {
+      const check = await checkLimit({ ...limit, subject: viewer.userId });
+      if (!check.allowed) {
+        logSearch({ userId: viewer.userId, query, language, page, outcome: 'DENIED', request });
+        return denied(
+          'rate_limited',
+          'That is a lot of searching. Try again shortly.',
+          429,
+          undefined,
+          check.retryAfter,
+        );
+      }
+    }
   } else {
     viewer = await optionalViewer(request);
   }

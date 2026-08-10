@@ -112,3 +112,12 @@ export interface MeResponse {
   entitledUntil: string | null;
   source: string | null;
 }
+
+/** The donation prompt, as configured from the dashboard. */
+export interface Announcement {
+  enabled: boolean;
+  message: string;
+  /** Validated `#rrggbb` server-side. Only ever used as an inline style value. */
+  color: string;
+  url: string | null;
+}

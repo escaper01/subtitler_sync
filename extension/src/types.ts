@@ -128,6 +128,8 @@ export type ToBackground =
    * there, so the panel never holds a credential it has no use for.
    */
   | { kind: 'auth:state' }
+  /** The admin-controlled donation prompt, or nothing. */
+  | { kind: 'announcement' }
   | { kind: 'auth:open-signin' }
   | { kind: 'auth:sign-out' };
 

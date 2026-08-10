@@ -1,7 +1,14 @@
 import type { TabState, ToBackground, ToBackgroundFromPopup } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
 import { broadcastToTab, onMessage } from '@/lib/messaging';
-import { apiBase, downloadSubtitle, fetchMe, fetchRelease, searchSubtitles } from '@/lib/api';
+import {
+  apiBase,
+  downloadSubtitle,
+  fetchAnnouncement,
+  fetchMe,
+  fetchRelease,
+  searchSubtitles,
+} from '@/lib/api';
 import { clearAuth, listenForToken } from '@/background/auth';
 
 /**
@@ -109,6 +116,10 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
 
     case 'auth:state': {
       return fetchMe();
+    }
+
+    case 'announcement': {
+      return fetchAnnouncement();
     }
 
     case 'auth:open-signin': {

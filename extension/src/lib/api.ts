@@ -1,4 +1,11 @@
-import type { ApiError, ApiErrorCode, MeResponse, ReleaseResponse, SearchResponse } from '@/lib/api-types';
+import type {
+  Announcement,
+  ApiError,
+  ApiErrorCode,
+  MeResponse,
+  ReleaseResponse,
+  SearchResponse,
+} from '@/lib/api-types';
 import { loadAuth } from '@/background/auth';
 
 /**
@@ -137,6 +144,16 @@ export async function fetchRelease(
  */
 export async function fetchMe(): Promise<ApiResult<MeResponse>> {
   return request<MeResponse>('api/me', {});
+}
+
+/**
+ * The donation prompt, if the dashboard has one switched on.
+ *
+ * Whether it applies is decided server-side from the token, so a subscriber is never asked
+ * for money they have already given.
+ */
+export async function fetchAnnouncement(): Promise<ApiResult<Announcement>> {
+  return request<Announcement>('api/announcement', {});
 }
 
 /** Fetch a subtitle's text. Returns the text itself, not JSON. */

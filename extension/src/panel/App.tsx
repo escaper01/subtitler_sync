@@ -9,6 +9,8 @@ import { FindTab } from '@/panel/components/FindTab';
 import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
 import { SitesTab } from '@/panel/components/SitesTab';
+import { PanelBanner } from '@/panel/components/PanelBanner';
+import { AccountLine } from '@/panel/components/AccountLine';
 
 /** How often the panel samples playback position. Enough for a smooth highlight. */
 const TICK_MS = 120;
@@ -151,6 +153,8 @@ function Panel() {
       </nav>
 
       <div className="flex-1 overflow-y-auto p-2.5">
+        <PanelBanner />
+
         {(error || notice) && (
           <div className="mb-2.5">
             <Banner tone={error ? 'error' : 'info'} onDismiss={dismiss}>
@@ -171,6 +175,9 @@ function Panel() {
           <kbd className="text-white/50">S</kbd> sync · <kbd className="text-white/50">G</kbd>/
           <kbd className="text-white/50">H</kbd> nudge ·{' '}
           <kbd className="text-white/50">Shift+S</kbd> hide
+        </span>
+        <span className="ml-auto">
+          <AccountLine />
         </span>
       </footer>
     </div>

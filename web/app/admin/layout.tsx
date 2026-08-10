@@ -1,6 +1,33 @@
 import Link from 'next/link';
-import { AdminNav } from '@/app/admin/AdminNav';
+import { AdminNav, type NavCounts } from '@/app/admin/AdminNav';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { db } from '@/lib/db';
+
+export const dynamic = 'force-dynamic';
+
+/**
+ * What needs attention, for the rail's badges.
+ *
+ * `groupBy` rather than counting fetched rows: the queue pages cap at 200 and filter by
+ * status, so anything derived from them would be wrong in both directions. Errs to zero —
+ * a database blip should not put a false "3" next to a link.
+ */
+async function navCounts(): Promise<NavCounts> {
+  try {
+    const [submissions, codes] = await Promise.all([
+      db.submission.groupBy({ by: ['kind'], where: { status: 'NEW' }, _count: true }),
+      db.pendingGrant.count({ where: { status: 'PENDING' } }),
+    ]);
+
+    return {
+      reports: submissions.find((row) => row.kind === 'REPORT')?._count ?? 0,
+      features: submissions.find((row) => row.kind === 'FEATURE')?._count ?? 0,
+      codes,
+    };
+  } catch {
+    return { reports: 0, features: 0, codes: 0 };
+  }
+}
 
 /**
  * Admin shell: a fixed left rail on desktop, a strip of links above the content on narrow
@@ -9,7 +36,9 @@ import { ThemeToggle } from '@/components/ThemeToggle';
  * Access is decided in `middleware.ts`, not here — by the time this renders the request
  * has already been authorised, so there is no guard component and no loading flash.
  */
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const counts = await navCounts();
+
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
       <aside className="border-b border-line lg:sticky lg:top-0 lg:h-screen lg:border-r lg:border-b-0">
@@ -24,7 +53,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </div>
           </div>
 
-          <AdminNav />
+          <AdminNav counts={counts} />
 
           <div className="mt-auto hidden items-center gap-2 lg:flex">
             <ThemeToggle />
