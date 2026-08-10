@@ -39,7 +39,11 @@ overrides.
   ID → Web application. The authorised redirect URI must be exactly
   `<NEXTAUTH_URL>/api/auth/callback/google`. Until these are set, `/admin` cannot be signed
   into; everything else runs.
-- **`NEXT_PUBLIC_DONATE_URL`** — optional; the Donate button is inert without it.
+- **`LEMONSQUEEZY_*`** — the shop. The webhook secret is what makes deliveries trustworthy;
+  the API key is only used to rescue a licence a webhook lost. Search and `/admin` both work
+  without them, so leave them empty until you are actually taking money.
+- **`RESEND_API_KEY` / `EMAIL_FROM`** — sends trial keys. Without them the trial form fails
+  loudly and rolls the claim back rather than burning somebody's only trial.
 
 There is no `ADMIN_EMAILS`. Admins are rows in the database — see below.
 
@@ -127,9 +131,9 @@ separately. Images are 16:10.
 **The store URL** is a placeholder in `lib/site.ts` until the listing is published. Set
 `NEXT_PUBLIC_STORE_URL` and every "Add to Chrome" button follows.
 
-## Accounts, money and the gate
+## Money and the gate
 
-Four files carry the whole model. Read them in this order.
+Five files carry the whole model. Read them in this order.
 
 **`lib/entitlement.ts` — the only writer of `User.entitledUntil`.** `Entitlement` rows are an
 append-only ledger; that column is a cache of `max(endsAt)` written *only* by `recompute`,
@@ -139,20 +143,32 @@ If anything else writes it, the ledger and the cache drift and someone loses acc
 for.
 
 Periods **stack**: a new one starts at `max(now, entitledUntil)`, so buying early never costs
-the buyer days. Idempotency rides on the `dedupeKey` unique index — trial-once, webhook
-replay and double-redeem all fail on one constraint instead of three hand-written checks.
+the buyer days — except when the provider states an exact end date, which is copied rather
+than added to, because adding thirty days a month drifts a little further every time.
+Idempotency rides on the `dedupeKey` unique index — trial-once and webhook replay both fail on
+one constraint instead of two hand-written checks.
 
 The trial is recorded in `TrialClaim`, which has **no relation to `User`** on purpose:
 entitlements cascade on account deletion, so recording it only on the ledger meant
 delete-and-sign-up-again minted a fresh seven days forever. The address is hashed, so an
 account can still be erased.
 
-**`lib/extensionToken.ts` — the credential.** Opaque and random, not a JWT: revocation has to
-be instant, and the request reads the database anyway. Hashed with SHA-256 and **not** bcrypt
-— the secret is 256 CSPRNG bits, so there is nothing to slow an attacker down over, and a
-slow KDF would land on every API call. The token is `stx_<id>_<secret>`; parse it with
-`parseToken`, never `split('_')`, because base64url **contains underscores** and about half
-of all real tokens have one.
+**`lib/license.ts` — the credential.** There is no sign-in. A key identifies its owner and
+nothing more; whether that owner may search still comes from `entitledUntil`, so a lapsed
+subscription leaves the key intact and simply stops opening the door, and renewing revives
+the same key. Hashed with SHA-256 and **not** bcrypt — the key is high-entropy random from
+someone else's CSPRNG, so there is nothing to slow an attacker down over, and a slow KDF would
+land on every API call.
+
+`activate()` enforces the device limit, and **locks the licence row `FOR UPDATE` before
+counting**. This is not defensive habit: a plain transaction around count-then-insert lets two
+devices take the same last seat, because under READ COMMITTED neither sees the other's
+uncommitted row and the unique index on `(licenseId, installId)` has nothing to fire on when
+the install ids differ. It only catches a device racing itself. There is a test for it.
+
+`recoverLicense()` is the missed-webhook path: a key we do not know is checked against Lemon
+Squeezy once, and if they vouch for it the rows are created on the spot. Without it a lost
+delivery is a paying customer who cannot use what they bought.
 
 **`lib/gate.ts` — the enforcement.** `requireEntitlement` runs on `search`, `release` **and**
 `download`. All three: a release path is a shareable string, so gating only search leaves the
@@ -164,17 +180,21 @@ whose URL is server-owned — it can change without an extension update going th
 `X-Subtitler-Key` must reach users before the server *requires* it; enforcing first breaks
 search for everyone already installed, with no server-side way to undo it.
 
-**`lib/codes.ts` and `lib/patreon.ts` — taking money.** A code use is claimed with a
-conditional `UPDATE ... WHERE redemptionCount < maxRedemptions`, in raw SQL because that
-comparison is column-to-column. This is not a style choice: a read followed by a write lets
-two simultaneous redemptions of the last use both succeed. Patreon signs with **HMAC-MD5 over
-the raw body** — read `request.text()` once and verify against those bytes, never against a
-re-serialised object. It usually sends **no email**, so the claimable-code path is the normal
-one and every payment leaves something to send. A cancelled pledge keeps the period it paid
-for; `revokedAt` is for chargebacks.
+**`lib/lemonsqueezy.ts` and the webhook — taking money.** Deliveries are signed **HMAC-SHA256
+over the raw body**: read `request.text()` once and verify against those bytes, never against
+a re-serialised object. The route answers 401 for a bad signature, 400 for an unparseable
+body, 200 for events it ignores, and 500 *only* when our database failed — because Lemon
+Squeezy retries anything that is not 2xx, and a retry only helps in that last case. A
+cancelled subscription is **not** revoked; `ends_at` becomes the end of what was paid for and
+access lapses on its own.
 
-Never add `Access-Control-Allow-Credentials` beside the wildcard origin. The token travels in
-a header precisely so a hostile page can never have the browser attach it.
+**`lib/settings.ts` — the levers.** Rate limits, the trial length and the default device limit
+are rows, not constants, cached for 60 seconds so the settings row is not read on every
+request. `lib/rateLimit.ts` reads them. A limit that needs a deploy to change is one you
+cannot use when you actually need it.
+
+Never add `Access-Control-Allow-Credentials` beside the wildcard origin. The key travels in a
+header precisely so a hostile page can never have the browser attach it.
 
 ## Admin
 
@@ -183,20 +203,23 @@ the public home page. Navigation is a left rail (`AdminNav`) that collapses to a
 links on narrow screens. Both pages are gated in `middleware.ts` — server-side, before the
 route is served. A client-side guard would still ship the page bundle to a stranger.
 
-`/admin` has an overview, split queues for reports and requests, users, codes and settings.
+`/admin` has an overview, split queues for reports and requests, users, licences and settings.
 Badge counts come from a `groupBy` in the layout — the queue pages cap at 200 rows and
 filter by status, so counting fetched rows was wrong in both directions.
 
-**Signing in no longer implies anything.** It used to: `signIn` refused every address not in
-the `Admin` table, so a stranger could not hold a session at all. That property is gone
-deliberately, which makes `requireAdmin()` load-bearing — **every** `/api/admin/*` route must
-call it, because middleware covers `/admin/*` pages only and cannot reach Prisma from the
+**Signing in is admin-only again.** It briefly was not, when customers had accounts; now
+they have keys instead, so `signIn` refuses every address not in the `Admin` table and a
+stranger cannot hold a session at all. `requireAdmin()` stays on **every** `/api/admin/*`
+route regardless — middleware covers `/admin/*` pages only, and cannot reach Prisma from the
 edge runtime anyway.
 
-Auth is NextAuth + Google, checked against the **`Admin` table**. There is no user table
-and no roles, because there is exactly one kind of user. `isAdmin` is re-derived from the
-database on **every** token refresh, so deleting a row ends that session's access at its
-next request rather than whenever it would have expired.
+Auth is NextAuth + Google, checked against the **`Admin` table** — which is unrelated to
+`User`, the customer record. There are no roles, because there is exactly one kind of admin.
+`isAdmin` is re-derived from the database on **every** token refresh, so deleting a row ends
+that session's access at its next request rather than whenever it would have expired.
+
+`pages.signIn` points at `/admin/login`. It briefly pointed at a neutral `/signin` for
+customers; that route went with their accounts, and a failed sign-in landed on a 404.
 
 `isAdminEmail` errs closed: a database failure denies access instead of granting it.
 
@@ -213,8 +236,10 @@ module load meant `next build` needed the production secrets just to collect pag
 
 ## Database
 
-Prisma 7 + Postgres. One table, `Submission`, holding both bug reports and feature requests
-— they differ by a label and are read from one queue.
+Prisma 7 + Postgres. `Submission` holds both bug reports and feature requests — they differ
+by a label and are read from one queue. `User`, `Entitlement`, `License`, `LicenseActivation`,
+`TrialClaim` and `Plan` carry the money model above; `SiteSetting` is a singleton row of
+admin-editable levers.
 
 Prisma 7 **removed `url` from the datasource block**: the connection string now lives in
 `prisma.config.ts` for the CLI, and reaches the client through a driver adapter

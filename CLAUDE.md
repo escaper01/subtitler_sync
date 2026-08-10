@@ -49,12 +49,18 @@ place where neither typechecker is looking.
 
 ## The paywall, in one paragraph
 
-Subtitle **search** needs an account and a subscription; loading your own `.srt` or `.vtt`
-stays free forever and touches none of that code. The extension signs in by opening
-`{site}/connect`, which hands back an opaque token stored in `chrome.storage.local` and sent
-as `X-Subtitler-Key` on every request. The server decides — on `search`, `release` **and**
-`download` — and the extension's UI only renders whatever answer came back. Nothing shipped
-inside the extension is trusted, because anything shipped inside it can be edited.
+Subtitle **search** needs a subscription; loading your own `.srt` or `.vtt` stays free forever
+and touches none of that code. **The licence key is the whole credential** — there is no
+account and nothing to sign in to. Lemon Squeezy generates the key at checkout and emails it,
+the user pastes it into the extension's popup, and it travels as `X-Subtitler-Key` on every
+request alongside `X-Subtitler-Install`, an anonymous per-install id the device limit counts.
+The server decides — on `search`, `release` **and** `download` — and the extension's UI only
+renders whatever answer came back. Nothing shipped inside the extension is trusted, because
+anything shipped inside it can be edited.
+
+**A key we do not recognise is checked with Lemon Squeezy before it is refused.** A webhook
+that never arrived would otherwise mean a paying customer whose key does not work and a
+support email; instead the first request repairs itself.
 
 **It is switched off until you turn it on.** `ENFORCE_ENTITLEMENT` defaults to false so an
 extension build that sends the header can reach users before the server starts requiring it.
@@ -63,10 +69,14 @@ server.
 
 ## Status
 
-Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click loading,
-the public site, user accounts with a 7-day trial, the subscription gate, Patreon and redeemable
-codes, the admin dashboard (overview, reports, requests, users, codes, settings, API reference),
-and an admin-editable donation prompt on both surfaces.
+Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click
+loading, the public site, the pricing page, licence keys through Lemon Squeezy, a 7-day trial
+emailed by Resend, the device limit, the admin dashboard (overview, reports, requests, users,
+licences, settings, API reference), and an admin-editable upgrade prompt on both surfaces.
+
+Prices, plan details, rate limits, the trial length and the default device limit are **rows in
+the database**, edited at `/admin/settings`. They were constants; a price in two places drifts,
+and a limit that needs a deploy to change is a limit you cannot use in an emergency.
 
 Setting up `web/` from scratch is `npm install && cp .env.example .env && npm run setup &&
 npm run db:seed` — Postgres runs in Docker (`web/docker-compose.yml`) and the admin list is a

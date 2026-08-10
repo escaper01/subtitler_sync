@@ -75,9 +75,10 @@ export const authOptions: AuthOptions = {
   },
 
   pages: {
-    // Neutral, because this page is now reached by ordinary users too. `/admin/login`
-    // still exists as its own route for the dashboard.
-    signIn: '/signin',
-    error: '/signin',
+    // `/admin/login`, because the dashboard is the only thing anyone signs in to. The
+    // neutral `/signin` this used to point at existed for customers, and went with their
+    // accounts — leaving it here sent a failed sign-in to a 404.
+    signIn: '/admin/login',
+    error: '/admin/login',
   },
 };

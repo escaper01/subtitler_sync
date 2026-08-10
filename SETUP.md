@@ -76,9 +76,9 @@ Already done, and `extension/key.pem` exists. Two rules:
 - **Back it up somewhere outside this repo.** It is git-ignored. Lose it and the published
   extension can never be updated again.
 - **Upload this same key to the Chrome Web Store** when you first publish. If the Store
-  generates its own instead, the published extension gets a different id from the one the
-  website is configured for, and sign-in will work perfectly on your machine and fail
-  silently for everyone else.
+  generates its own instead, the published extension gets a different id from the one you
+  have been testing, and anything keyed to the old id — an existing install, a bookmark,
+  a support note — points at nothing.
 
 To print the id and the manifest key again:
 
@@ -110,13 +110,14 @@ the host's dashboard — `.env.example` explains each one:
 | `DATABASE_URL` | Production Postgres. Neon's free tier is enough. |
 | `NEXTAUTH_SECRET` | Fresh value, **not** the development one. See below. |
 | `NEXTAUTH_URL` | `https://your-domain` |
-| `NEXT_PUBLIC_SITE_URL` | `https://your-domain` — used to build links the extension opens |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | From the OAuth client |
-| `NEXT_PUBLIC_EXTENSION_ID` | `npm run key` in `extension/` prints it |
-| `PATREON_WEBHOOK_SECRET` | From the Patreon webhook, if you use one |
+| `NEXT_PUBLIC_SITE_URL` | `https://your-domain` — used to build the links the extension opens |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | From the OAuth client. These gate `/admin` and nothing else. |
+| `LEMONSQUEEZY_WEBHOOK_SECRET` | Part D. Without it every delivery is refused. |
+| `LEMONSQUEEZY_API_KEY` / `LEMONSQUEEZY_STORE_ID` | Part D. Only used to rescue a key we have no record of. |
+| `RESEND_API_KEY` / `EMAIL_FROM` | Part D. Without them the trial form cannot send. |
 | `IP_HASH_SALT` | Anything long and random |
 | `TRIAL_HASH_SALT` | Anything long and random. **Changing it later gives everyone a fresh trial.** |
-| `NEXT_PUBLIC_DONATE_URL` | Optional; the Donate button is inert without it |
+| `NEXT_PUBLIC_STORE_URL` | The Web Store listing, once step 3 is done |
 | `ENFORCE_ENTITLEMENT` | **Leave unset for now.** Step 4 turns it on. |
 
 Generate a production secret:
@@ -139,18 +140,12 @@ Seed your admin row against production the same way, or insert it by hand:
 DATABASE_URL="<production url>" npm run db:seed
 ```
 
-### Step 2 — Update the three places that name your domain
+### Step 2 — Update the two places that name your domain
 
 1. **Google OAuth** — add `https://your-domain/api/auth/callback/google` to the authorised
-   redirect URIs. Keep the localhost one so development still works.
-2. **`extension/src/manifest.config.ts`** — add your origin to
-   `externally_connectable.matches`:
-   ```ts
-   matches: ['http://localhost:3000/*', 'https://your-domain/*'],
-   ```
-   That list is a hard allowlist. A site not on it is **silently ignored**, which looks
-   exactly like the extension not being installed.
-3. **Where the extension points** — either change `DEFAULT_API_BASE` in
+   redirect URIs. Keep the localhost one so development still works. This is for *your*
+   access to `/admin`; customers never sign in to anything.
+2. **Where the extension points** — either change `DEFAULT_API_BASE` in
    `extension/src/lib/api.ts`, or leave the default and set it at runtime:
    ```js
    chrome.storage.sync.set({ apiBase: 'https://your-domain' })
@@ -198,40 +193,73 @@ instant.
 
 ## Part D — Taking money
 
-### Patreon
+Lemon Squeezy is the shop, and the reason the extension has no sign-in: it generates a
+licence key at checkout, emails it to the buyer itself, and stops honouring it when the
+subscription ends. Nothing has to be matched up by hand.
 
-1. [patreon.com/portal/registration/register-webhooks](https://www.patreon.com/portal/registration/register-webhooks)
-2. Point it at `https://your-domain/api/webhooks/patreon`.
-3. Subscribe to `members:create`, `members:update`, `members:pledge:create`,
-   `members:pledge:update`, `members:pledge:delete`.
-4. Copy the secret into `PATREON_WEBHOOK_SECRET`.
-5. **Grant the `campaigns.members[email]` scope if you can.** Without it Patreon sends no
-   email address at all, so no payment can be matched to an account automatically and every
-   one becomes a code you send by hand.
+### 1. The store and the two products
 
-Either way nobody who pays goes without: a payment that cannot be matched appears at
-`/admin/codes` under **Waiting to be claimed**, with a code to send them.
+1. Create a store at [lemonsqueezy.com](https://www.lemonsqueezy.com). It starts in **test
+   mode** — stay there until the whole flow works end to end.
+2. Create two subscription products: **Monthly** and **Yearly**.
+3. On each one, turn **licence keys** on:
+   - *Generate licence keys* — **yes**
+   - *Activation limit* — **2**, matching the default in `/admin/settings`
+   - *Expires with subscription* — **yes**. Without this a cancelled customer keeps a key
+     that our database has already stopped honouring, which reads as a bug to them.
+4. Copy each product's checkout URL.
 
-### Codes by hand
+### 2. Tell the site about them
 
-`/admin/codes` mints them — 7, 30 or 365 days, or any number you type, and any number of uses.
-Someone redeems one from the extension popup.
+`/admin/settings` → **Plans**. Set the price and paste the checkout URL for each. Prices are
+entered in currency and stored in cents, and the pricing page reads them on every request —
+no deploy, no rebuild.
 
-Or give access directly: `/admin/users` → pick the person → **Give access**.
+The trial plan has no checkout URL. It is handled here, not there.
 
----
+### 3. The webhook
+
+1. Lemon Squeezy → Settings → **Webhooks** → add one at
+   `https://your-domain/api/webhooks/lemonsqueezy`.
+2. Subscribe to `subscription_created`, `subscription_updated`,
+   `subscription_payment_success`, `subscription_expired`, `subscription_cancelled`,
+   `license_key_created`.
+3. Copy the signing secret into `LEMONSQUEEZY_WEBHOOK_SECRET`.
+
+Then buy your own monthly plan in test mode. You should get an email with a key, see the
+licence at `/admin/licenses`, and be able to paste it into the extension popup and search.
+
+**A cancellation does not cut anyone off.** The period already paid for runs out on its own.
+
+### 4. Resend, for trial keys
+
+1. [resend.com](https://resend.com) → add your domain → add the DNS records it asks for.
+2. Create an API key; put it in `RESEND_API_KEY`.
+3. Set `EMAIL_FROM` to an address at the verified domain.
+
+Until the domain verifies, the trial form returns "we could not send the email" and **does
+not consume the trial** — the claim, the licence and the entitlement are all rolled back
+together, so the person can ask again once it works. Test that before launch by requesting a
+trial with the key deliberately unset.
+
+### Giving access by hand
+
+`/admin/licenses` → **Issue a key** mints one against any address, for any number of days —
+for a refund, a reviewer, or somebody a webhook lost. `/admin/users` → **Give access** grants
+time without issuing a key.
 
 ## Where things are afterwards
 
 | | |
 |---|---|
 | `/` | The public site |
+| `/pricing` | The plans, the trial form, and why search costs anything |
 | `/privacy` | The policy the Web Store listing points at |
 | `/admin` | Overview — what needs attention today |
 | `/admin/reports`, `/admin/features` | The two queues, with unread badges |
 | `/admin/users` | Accounts, subscriptions, searches, and the levers over them |
-| `/admin/codes` | Mint codes; unclaimed payments appear here |
-| `/admin/settings` | The donation prompt shown on both surfaces |
+| `/admin/licenses` | Every key, its owner, its devices; mint one by hand |
+| `/admin/settings` | Plans and prices, the upgrade prompt, rate and device limits |
 | `/admin/api` | What the extension calls |
 
 ## When something goes wrong
@@ -239,8 +267,10 @@ Or give access directly: `/admin/users` → pick the person → **Give access**.
 | Symptom | Almost always |
 |---|---|
 | Search finds nothing, for everybody | subtitlecat changed their markup. `LIVE=1 npm test` in `web/`, then fix the selectors in `lib/subtitlecat/parse.ts` and deploy. No extension release needed. |
-| `/connect` says the extension did not answer | `NEXT_PUBLIC_EXTENSION_ID` does not match the installed extension, or your origin is missing from `externally_connectable.matches`. |
-| Sign-in bounces with no error | The Google redirect URI does not match `NEXTAUTH_URL` exactly. |
+| A customer's key is refused | Check `/admin/licenses`. If it is not there, the webhook never arrived — the next request they make repairs it automatically, provided `LEMONSQUEEZY_API_KEY` is set. |
+| "You are using this key on too many devices" | They are, or they reinstalled twice. Raise the licence's own limit at `/admin/licenses`, which does not touch anyone else's. |
+| Trial emails never arrive | The Resend domain is not verified. Nobody has lost their trial — the claim is rolled back with the send. |
+| `/admin` sign-in bounces with no error | The Google redirect URI does not match `NEXTAUTH_URL` exactly. |
 | Everyone is suddenly locked out of search | `ENFORCE_ENTITLEMENT` was turned on before the new extension build reached people. Unset it. |
 | `/admin` refuses you | Your address is not in the `Admin` table on *that* database. |
 | `Cannot read properties of undefined` from Prisma | `prisma generate` has not run since the schema changed. |

@@ -290,20 +290,25 @@ straight at an editable input either way.
 **Search is a paid feature; loading your own file is not, and never will be.** `SubtitlesTab`
 touches none of the auth code — that is the promise the product rests on.
 
-Sign-in cannot happen in the panel: it is a content script inside somebody else's document,
-under their CSP, and cannot open tabs. The worker opens `{apiBase}/connect`, the site signs
-the user in, and the page hands a token back over `externally_connectable`. The token lives in
-`chrome.storage.local` — **never `sync`**, which would push a bearer credential to Google's
-servers and every machine on the profile — and is read only by `lib/api.ts`, which attaches it
-as `X-Subtitler-Key` in **both** its fetch call sites. Missing the hand-rolled one inside
+**The licence key is the whole credential.** There is no sign-in: the user buys from Lemon
+Squeezy, which emails them a key, and they paste it into the toolbar popup (`LicenseBox`).
+The key cannot be entered in the panel — that is a content script inside somebody else's
+document, under their CSP, and a credential has no business being typed there. The popup is
+a real extension page, which is why it owns this.
+
+The key lives in `chrome.storage.local` — **never `sync`**, which would push a bearer
+credential to Google's servers and every machine on the profile. `lib/api.ts` attaches it as
+`X-Subtitler-Key` in **both** of its fetch call sites; missing the hand-rolled one inside
 `downloadSubtitle` is the easy mistake.
 
-`externally_connectable` needs a stable extension id, which is why the manifest pins a `key`.
-`extension/key.pem` is git-ignored: **back it up and upload the same key to the Web Store**,
-or the published id will not match what the site is configured for and sign-in will work
-locally while failing for everyone else. Adding a real domain means adding it to
-`externally_connectable.matches` too — that list is a hard allowlist, and a site not on it is
-silently ignored, which looks exactly like the extension not being installed.
+Alongside it goes `X-Subtitler-Install`, a random per-install id generated once on first use
+and kept in `storage.local` beside the key. It is what the server's device limit counts, so
+it identifies the *installation*, not the person — and it must not be regenerated, or every
+service-worker restart would spend another of the user's two devices.
+
+The manifest still pins a `key`, but only for a stable Web Store identity now; the
+`externally_connectable` handoff it used to exist for is gone. Back up `extension/key.pem`
+and upload the same key to the Store.
 
 **The panel never decides on its own that someone is locked out.** It renders whatever the
 server returned — `find.code` and `find.action` beside the existing `find.error`. Two sources
