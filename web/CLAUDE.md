@@ -29,11 +29,19 @@ overrides.
 - **`DATABASE_URL`** — already correct for the Docker database. Host port is **5433**, not
   5432, because 5432 is commonly already occupied; a clash there surfaces as an auth
   failure against somebody else's database rather than as "port in use".
-- **`NEXTAUTH_SECRET`** — at least 32 characters. Generate one with:
+- **Three values you generate, not fetch** — `NEXTAUTH_SECRET`, `TRIAL_HASH_SALT` and
+  `IP_HASH_SALT`. All three are just long random strings:
   ```bash
   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
   ```
-  Changing it signs everyone out. Use a different value in production.
+  Run it once **per variable**. They are unrelated secrets with different consequences when
+  rotated, so reusing one value means rotating it drags the other two along:
+  - `NEXTAUTH_SECRET` signs the session cookie — changing it signs every admin out. At least
+    32 characters, and a different value in production than in development.
+  - `TRIAL_HASH_SALT` salts "this address has had its trial" — changing it hands **everyone**
+    a fresh trial.
+  - `IP_HASH_SALT` salts the stored hash of a caller's IP — changing it only resets
+    abuse-detection history, so it is the safe one to rotate.
 - **`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`** — the only two you must fetch by hand.
   Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client
   ID → Web application. The authorised redirect URI must be exactly

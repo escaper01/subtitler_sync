@@ -115,16 +115,24 @@ the host's dashboard — `.env.example` explains each one:
 | `LEMONSQUEEZY_WEBHOOK_SECRET` | Part D. Without it every delivery is refused. |
 | `LEMONSQUEEZY_API_KEY` / `LEMONSQUEEZY_STORE_ID` | Part D. Only used to rescue a key we have no record of. |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Part D. Without them the trial form cannot send. |
-| `IP_HASH_SALT` | Anything long and random |
-| `TRIAL_HASH_SALT` | Anything long and random. **Changing it later gives everyone a fresh trial.** |
+| `IP_HASH_SALT` | Generate one. See below. |
+| `TRIAL_HASH_SALT` | Generate one. See below. **Changing it later gives everyone a fresh trial.** |
 | `NEXT_PUBLIC_STORE_URL` | The Web Store listing, once step 3 is done |
 | `ENFORCE_ENTITLEMENT` | **Leave unset for now.** Step 4 turns it on. |
 
-Generate a production secret:
+Three of those you generate rather than fetch from anywhere — `NEXTAUTH_SECRET`,
+`TRIAL_HASH_SALT` and `IP_HASH_SALT`:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+Run it **once per variable**, and use fresh values here rather than the ones from your
+development `.env`. Each is a separate secret: `NEXTAUTH_SECRET` signs the admin session
+cookie, `TRIAL_HASH_SALT` decides whether an address has already used its trial, and
+`IP_HASH_SALT` only salts abuse-detection history. Reusing one value across all three means
+you can never rotate the harmless one without also signing everyone out and reissuing every
+trial.
 
 Then run the migrations against the production database once:
 
