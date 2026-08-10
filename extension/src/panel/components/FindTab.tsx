@@ -69,6 +69,19 @@ function Refusal() {
   const find = usePanel((s) => s.find);
   if (!find.error) return null;
 
+  // A device limit has no button worth offering — the fix is on another machine, not this
+  // one — so it reads as a plain explanation.
+  if (find.code === 'device_limit') {
+    return (
+      <div className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-2">
+        <p className="text-[11px] leading-relaxed text-white/85">{find.error}</p>
+        <p className="mt-1 text-[10px] text-white/45">
+          Open the extension menu on the machine you no longer use and remove the key there.
+        </p>
+      </div>
+    );
+  }
+
   // A plain error is just a sentence. A gated one is a sentence plus a way out.
   if (!find.code || !find.action) {
     return <p className="text-[11px] text-red-300">{find.error}</p>;

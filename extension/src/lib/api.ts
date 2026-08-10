@@ -6,7 +6,7 @@ import type {
   ReleaseResponse,
   SearchResponse,
 } from '@/lib/api-types';
-import { loadAuth } from '@/background/auth';
+import { installId, loadKey } from '@/background/auth';
 
 /**
  * The subtitle search API client. **Runs in the service worker only.**
@@ -74,18 +74,23 @@ export async function apiBase(): Promise<string> {
 }
 
 /**
- * The signed-in user's credential, if there is one.
+ * The licence key, and which installation is asking.
  *
- * A header rather than a cookie: the worker's `fetch` is not attached to any browsing
- * context, and a header keeps the API's CORS wide open without credentials — which is what
+ * Headers rather than a cookie: the worker's `fetch` is not attached to any browsing
+ * context, and headers keep the API's CORS wide open *without* credentials — which is what
  * makes `Access-Control-Allow-Origin: *` safe there.
  *
- * `X-Subtitler-Key` specifically, because the API already allowlists that name in its
- * preflight; using `Authorization` would mean changing the server's CORS too.
+ * These two names specifically, because the API already allowlists them in its preflight.
+ * The install id is what the server counts devices by, so a request without one cannot be
+ * limited — send it even when there is no key, since the search log uses it too.
  */
 async function authHeaders(): Promise<Record<string, string>> {
-  const auth = await loadAuth();
-  return auth ? { 'X-Subtitler-Key': auth.token } : {};
+  const [key, install] = await Promise.all([loadKey(), installId()]);
+
+  const headers: Record<string, string> = {};
+  if (key) headers['X-Subtitler-Key'] = key;
+  if (install) headers['X-Subtitler-Install'] = install;
+  return headers;
 }
 
 /**

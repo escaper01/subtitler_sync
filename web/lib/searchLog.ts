@@ -53,7 +53,7 @@ export { log as logSearch };
  * a store of IP addresses. Unsalted would be trivially reversible — the whole IPv4 space
  * hashes in seconds.
  */
-function hashIp(request: Request): string | null {
+export function hashIp(request: Request): string | null {
   // The first entry is the client; the rest are proxies that appended themselves.
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   const ip = forwarded || request.headers.get('x-real-ip')?.trim();

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { DONATE_URL, STORE_URL } from '@/lib/site';
+import { STORE_URL } from '@/lib/site';
 
 export function SiteFooter() {
   return (
@@ -27,22 +27,15 @@ export function SiteFooter() {
               </a>
             </li>
             <li>
+              <Link href="/pricing" className="text-muted transition-colors hover:text-accent">
+                Pricing
+              </Link>
+            </li>
+            <li>
               <Link href="/how-to-use" className="text-muted transition-colors hover:text-accent">
                 How to use
               </Link>
             </li>
-            {DONATE_URL && (
-              <li>
-                <a
-                  href={DONATE_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-muted transition-colors hover:text-accent"
-                >
-                  Donate
-                </a>
-              </li>
-            )}
           </ul>
         </nav>
 

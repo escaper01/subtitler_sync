@@ -121,17 +121,16 @@ export type ToBackground =
   | { kind: 'api:release'; path: string; lang: string }
   | { kind: 'api:download'; path: string }
   /**
-   * Sign-in state and controls.
+   * The licence key: what state it is in, and setting or clearing it.
    *
-   * The token itself never crosses this channel — it is written straight into
-   * `chrome.storage.local` by the worker's `onMessageExternal` listener and read only
-   * there, so the panel never holds a credential it has no use for.
+   * `auth:set-key` is sent by the popup, which is the only surface that takes the key —
+   * the panel runs inside somebody else's page and should never hold one.
    */
   | { kind: 'auth:state' }
-  /** The admin-controlled donation prompt, or nothing. */
-  | { kind: 'announcement' }
-  | { kind: 'auth:open-signin' }
-  | { kind: 'auth:sign-out' };
+  | { kind: 'auth:set-key'; key: string }
+  | { kind: 'auth:clear' }
+  /** The admin-controlled upgrade prompt, or nothing. */
+  | { kind: 'announcement' };
 
 /** background → content script */
 export type ToContent = { kind: 'toggle-panel' };

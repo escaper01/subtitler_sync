@@ -72,9 +72,19 @@ export async function recompute(tx: Prisma.TransactionClient, userId: string): P
 export interface GrantInput {
   userId: string;
   source: EntitlementSource;
-  /** Ignored when `lifetime` is set. */
+  /** Ignored when `lifetime` or `endsAt` is set. */
   days?: number;
   lifetime?: boolean;
+  /**
+   * An exact end date, when the source already knows it.
+   *
+   * Lemon Squeezy owns the subscription clock and tells us `renews_at`, so copying that is
+   * faithful where adding 30 days would drift a little further every month.
+   *
+   * Note this does **not** stack: an explicit end replaces the window rather than
+   * extending it, because the provider is stating the whole truth, not adding to it.
+   */
+  endsAt?: Date;
   /** Makes the grant idempotent — see the `dedupeKey` notes in schema.prisma. */
   dedupeKey: string;
   note?: string;
@@ -125,9 +135,11 @@ export async function grantWithin(
         ? user.entitledUntil
         : now;
 
-    const endsAt = input.lifetime
-      ? LIFETIME_ENDS_AT
-      : new Date(startsAt.getTime() + (input.days ?? 0) * 24 * 60 * 60 * 1000);
+    const endsAt = input.endsAt
+      ? input.endsAt
+      : input.lifetime
+        ? LIFETIME_ENDS_AT
+        : new Date(startsAt.getTime() + (input.days ?? 0) * 24 * 60 * 60 * 1000);
 
     try {
       await tx.entitlement.create({

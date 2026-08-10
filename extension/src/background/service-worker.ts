@@ -9,7 +9,7 @@ import {
   fetchRelease,
   searchSubtitles,
 } from '@/lib/api';
-import { clearAuth, listenForToken } from '@/background/auth';
+import { clearKey, saveKey } from '@/background/auth';
 
 /**
  * Service worker.
@@ -61,11 +61,6 @@ function forget(tabId: number): void {
 }
 
 /* ------------------------------------------------------------------- lifecycle */
-
-// Top level, synchronously, on purpose: MV3 only wakes a suspended worker for listeners
-// registered during script evaluation. Registered any later, the sign-in handoff would
-// simply never arrive, with nothing anywhere saying why.
-listenForToken();
 
 chrome.tabs.onRemoved.addListener(forget);
 
@@ -122,13 +117,14 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
       return fetchAnnouncement();
     }
 
-    case 'auth:open-signin': {
-      // The panel is a content script and cannot open a tab; the worker can.
-      return openSignIn().then(() => ({ ok: true }));
+    case 'auth:set-key': {
+      // Stored, then immediately checked, so the popup can say whether it actually works
+      // rather than just "saved".
+      return saveKey(message.key).then(() => fetchMe());
     }
 
-    case 'auth:sign-out': {
-      return clearAuth().then(() => ({ ok: true }));
+    case 'auth:clear': {
+      return clearKey().then(() => ({ ok: true }));
     }
 
     case 'popup:get-tab-state': {
@@ -149,9 +145,9 @@ chrome.commands.onCommand.addListener((command, tab) => {
   }
 });
 
-/* ---------------------------------------------------------------------- signin */
+/* ---------------------------------------------------------------------- pricing */
 
-/** Open the site's handoff page, which signs the user in and passes a token back. */
-async function openSignIn(): Promise<void> {
-  await chrome.tabs.create({ url: new URL('connect', `${await apiBase()}/`).toString() });
+/** Where to send somebody who needs a key. Opened from the popup. */
+export async function pricingUrl(): Promise<string> {
+  return new URL('pricing', `${await apiBase()}/`).toString();
 }

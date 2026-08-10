@@ -1,6 +1,6 @@
 import { denied } from '@/lib/api';
 import { LIFETIME_ENDS_AT } from '@/lib/entitlement';
-import { activate, lookupLicense } from '@/lib/license';
+import { activate, lookupLicense, recoverLicense } from '@/lib/license';
 import { SITE_URL } from '@/lib/site';
 
 /**
@@ -63,7 +63,15 @@ function installOf(request: Request): string | null {
  *     if (!gate.ok) return gate.response;
  */
 export async function requireEntitlement(request: Request): Promise<Gate> {
-  const lookup = await lookupLicense(request.headers.get('x-subtitler-key'));
+  const key = request.headers.get('x-subtitler-key');
+  let lookup = await lookupLicense(key);
+
+  // A key we do not know might still be a real purchase whose webhook never arrived. Ask
+  // Lemon Squeezy once; if they vouch for it, the rows are created and this retry finds
+  // them. Only for genuinely unknown keys — a revoked one stays revoked.
+  if (!lookup.ok && lookup.reason === 'unknown' && key) {
+    if (await recoverLicense(key)) lookup = await lookupLicense(key);
+  }
 
   if (!lookup.ok) {
     if (lookup.reason === 'missing') {

@@ -32,7 +32,7 @@ export default function PrivacyPage() {
         the title you typed, because that is the only way to look it up.
       </p>
 
-      <Section title="If you never sign in">
+      <Section title="If you never buy anything">
         <p>
           Nothing about you is stored. The extension keeps your subtitle files, styling, timing
           adjustments and site list <strong>on your own machine</strong>, in the browser&rsquo;s
@@ -44,18 +44,19 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="If you sign in">
-        <p>Signing in with Google gives this service:</p>
+      <Section title="If you subscribe or take a trial">
+        <p>
+          There is no account and no password — <strong>you never sign in</strong>. You get a
+          licence key, paste it into the extension, and that is the whole arrangement.
+        </p>
+        <p>What is stored against that key:</p>
         <List
           items={[
-            'Your email address — it is the identity your subscription is attached to.',
-            'Your name and profile picture, if Google provides them.',
+            'Your email address — where the key was sent, and the only way to reach you about it.',
+            'The key itself, as a one-way hash. The copy you were emailed is the only usable one.',
+            'Which installations of the extension are using it, so the device limit can be enforced.',
           ]}
         />
-        <p>
-          No password is involved, and this service never sees one. Signing in is only needed
-          for subtitle <em>search</em>; loading your own file needs no account.
-        </p>
       </Section>
 
       <Section title="When you search for subtitles">
@@ -74,9 +75,9 @@ export default function PrivacyPage() {
         </p>
         <p className="rounded-xl border border-line bg-surface-2 px-4 py-3">
           <strong>Be aware:</strong> a search history is a record of what you have been
-          watching, and it is kept against your account indefinitely. If that bothers you, you
-          can ask for it to be deleted — see below — or use the extension without signing in
-          and load your own subtitle files, which records nothing.
+          watching, and it is kept against your licence indefinitely. If that bothers you,
+          you can ask for it to be deleted — see below — or use the extension without a key
+          at all and load your own subtitle files, which records nothing.
         </p>
         <p>
           Searches are passed to <span className="font-mono text-sm">subtitlecat.com</span>,
@@ -97,25 +98,25 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="If you pay">
+      <Section title="Paying">
         <p>
-          Payments are handled by Patreon. This service never sees your card details. What it
-          receives is a membership identifier, and your Patreon email address if Patreon
-          supplies one, so that a payment can be matched to an account.
+          Payments are handled by Lemon Squeezy. This service never sees your card details —
+          what it receives is your email address, a subscription identifier, and the date
+          your access runs to.
         </p>
       </Section>
 
       <Section title="How long any of it is kept">
         <List
           items={[
-            'Your account and subscription history: until you ask for it to be deleted.',
+            'Your email, licence and subscription history: until you ask for it to be deleted.',
             'Search history: indefinitely, unless you ask for it to be deleted.',
             'Bug reports and feature requests: indefinitely, so the same issue is not investigated twice.',
             'Rate-limiting counters: hours to a day, then discarded automatically.',
           ]}
         />
         <p>
-          One thing survives account deletion by design: a one-way hash recording that an
+          One thing survives deletion by design: a one-way hash recording that an
           address has already used its free trial. It cannot be reversed into your email, and
           exists only so the trial cannot be taken repeatedly.
         </p>
@@ -132,15 +133,15 @@ export default function PrivacyPage() {
       <Section title="Getting your data, or getting rid of it">
         <p>
           Ask, and it will be done: a copy of what is stored about you, or deletion of your
-          account and its history. Use the{' '}
+          record and its history. Use the{' '}
           <Link href="/report" className="text-accent hover:underline">
             report form
           </Link>{' '}
           and include the email address you signed in with.
         </p>
         <p>
-          You can also sign out of the extension at any time, which removes its stored
-          credential from your browser immediately.
+          You can also remove the key from the extension at any time, from its popup, which
+          deletes it from your browser immediately.
         </p>
       </Section>
 

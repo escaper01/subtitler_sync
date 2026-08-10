@@ -4,14 +4,15 @@ import type { ApiResult } from '@/lib/api';
 import { askBackground } from '@/lib/messaging';
 
 /**
- * Subscription status, in the panel footer.
+ * Licence status, in the panel footer.
  *
  * A line rather than a sixth tab: five already nearly fill 340px, and this is something to
- * glance at, not somewhere to go. Everything you can actually *do* about it lives in the
- * toolbar popup, which is a real extension page with room for it.
+ * glance at, not somewhere to go. Entering or removing a key happens in the toolbar popup,
+ * which is a real extension page with room for it — and the only surface that should ever
+ * hold a credential.
  *
- * Silent when signed out and not searching — the Find tab already says what to do, and the
- * footer is not the place to sell anything.
+ * Silent when there is no key. The Find tab already says what to do, and the footer is not
+ * the place to sell anything.
  */
 export function AccountLine() {
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -33,7 +34,7 @@ export function AccountLine() {
 
   return (
     <span className="text-[10px] text-white/30" title={me.email ?? undefined}>
-      {me.entitled ? describe(me) : 'no subscription'}
+      {me.entitled ? describe(me) : 'licence lapsed'}
     </span>
   );
 }
