@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import type { ApiError } from '@/lib/api-types';
+import type { ApiError, ApiErrorCode } from '@/lib/api-types';
 import { isKnownLanguage } from '@/lib/languages';
 import { UpstreamError } from '@/lib/subtitlecat/http';
 
@@ -36,6 +36,26 @@ export function json(body: unknown, init?: ResponseInit): Response {
 
 export function fail(message: string, status: number, retryAfter?: number): Response {
   const body: ApiError = retryAfter === undefined ? { error: message } : { error: message, retryAfter };
+  return json(body, { status });
+}
+
+/**
+ * A refusal the client can act on.
+ *
+ * Separate from `fail` because these carry a `code` and usually a button. Everything a
+ * gated client is told comes from here, so the wording lives in one place rather than
+ * scattered across three routes.
+ */
+export function denied(
+  code: ApiErrorCode,
+  message: string,
+  status: number,
+  action?: { label: string; url: string },
+  retryAfter?: number,
+): Response {
+  const body: ApiError = { error: message, code };
+  if (action) body.action = action;
+  if (retryAfter !== undefined) body.retryAfter = retryAfter;
   return json(body, { status });
 }
 

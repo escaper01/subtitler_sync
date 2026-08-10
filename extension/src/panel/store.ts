@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { Cue, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
 import { IDENTITY_SYNC } from '@/types';
-import type { Release, ReleaseResponse, SearchResponse, Track } from '@/lib/api-types';
+import type { ApiErrorCode, Release, ReleaseResponse, SearchResponse, Track } from '@/lib/api-types';
 import type { ApiResult } from '@/lib/api';
 import type { SubtitleOverlay } from '@/content/overlay';
 import { parseSubtitleFile, parseSubtitleText, SubtitleParseError } from '@/lib/subtitles/parse';
@@ -38,6 +38,13 @@ export interface FindState {
   query: string;
   status: 'idle' | 'searching' | 'done';
   error: string | null;
+  /**
+   * Why the last request was refused, when it was refused for a reason the user can do
+   * something about. Kept *alongside* `error` rather than replacing it, so every existing
+   * render path keeps working and only the gated ones grow a button.
+   */
+  code: ApiErrorCode | null;
+  action: { label: string; url: string } | null;
   /** 1-based, and only ever one page's worth of releases is held. */
   page: number;
   total: number;
@@ -59,6 +66,8 @@ const EMPTY_FIND: FindState = {
   query: '',
   status: 'idle',
   error: null,
+  code: null,
+  action: null,
   page: 1,
   total: 0,
   hasMore: false,
@@ -298,7 +307,15 @@ export const usePanel = create<PanelState>((set, get) => ({
     }
 
     if (!result.ok) {
-      set({ find: { ...get().find, status: 'done', error: result.error } });
+      set({
+        find: {
+          ...get().find,
+          status: 'done',
+          error: result.error,
+          code: result.code ?? null,
+          action: result.action ?? null,
+        },
+      });
       return;
     }
 
@@ -353,6 +370,8 @@ export const usePanel = create<PanelState>((set, get) => ({
           ...done,
           expanding,
           error: result?.ok === false ? result.error : 'Could not open that release.',
+          code: result?.ok === false ? (result.code ?? null) : null,
+          action: result?.ok === false ? (result.action ?? null) : null,
         },
       });
       return;
@@ -380,9 +399,18 @@ export const usePanel = create<PanelState>((set, get) => ({
     });
 
     if (!result || !result.ok) {
+      // A gated download is shown in the Find tab beside the button that caused it, not
+      // as a panel-wide banner — the user is looking at the release they just clicked.
+      const gated = result?.ok === false && result.code !== undefined;
       set({
-        find: { ...get().find, loading: null },
-        error: result?.ok === false ? result.error : 'Could not download that subtitle.',
+        find: {
+          ...get().find,
+          loading: null,
+          error: result?.ok === false ? result.error : 'Could not download that subtitle.',
+          code: result?.ok === false ? (result.code ?? null) : null,
+          action: result?.ok === false ? (result.action ?? null) : null,
+        },
+        error: gated ? null : result?.ok === false ? result.error : 'Could not download that subtitle.',
       });
       return;
     }

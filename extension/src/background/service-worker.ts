@@ -1,8 +1,8 @@
 import type { TabState, ToBackground, ToBackgroundFromPopup } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
 import { broadcastToTab, onMessage } from '@/lib/messaging';
-import { apiBase, downloadSubtitle, fetchRelease, searchSubtitles } from '@/lib/api';
-import { clearAuth, listenForToken, loadAuth } from '@/background/auth';
+import { apiBase, downloadSubtitle, fetchMe, fetchRelease, searchSubtitles } from '@/lib/api';
+import { clearAuth, listenForToken } from '@/background/auth';
 
 /**
  * Service worker.
@@ -108,7 +108,7 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
     }
 
     case 'auth:state': {
-      return loadAuth().then((auth) => ({ signedIn: auth !== null }));
+      return fetchMe();
     }
 
     case 'auth:open-signin': {

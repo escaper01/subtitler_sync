@@ -1,5 +1,7 @@
 import { fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
 import { searchExpanded } from '@/lib/subtitlecat';
+import { enforcing, optionalViewer, requireEntitlement, type Viewer } from '@/lib/gate';
+import { logSearch } from '@/lib/searchLog';
 
 // cheerio needs Node built-ins, and the TTL cache wants a reused instance.
 export const runtime = 'nodejs';
@@ -22,9 +24,44 @@ export async function GET(request: Request): Promise<Response> {
   const language = parseLanguage(params.get('lang'));
   if (!language) return fail('Pick a supported language', 400);
 
+  const page = parsePage(params.get('page'));
+
+  // The gate runs before any upstream work — a refused search must cost subtitlecat
+  // nothing. While ENFORCE_ENTITLEMENT is off we still resolve the caller, so the log and
+  // the dashboard are already truthful before the rollout flips it on.
+  let viewer: Viewer | null;
+  if (enforcing()) {
+    const gate = await requireEntitlement(request);
+    if (!gate.ok) {
+      logSearch({ userId: null, query, language, page, outcome: 'DENIED', request });
+      return gate.response;
+    }
+    viewer = gate.viewer;
+  } else {
+    viewer = await optionalViewer(request);
+  }
+
   try {
-    return json(await searchExpanded(query, language, parsePage(params.get('page'))));
+    const result = await searchExpanded(query, language, page);
+    logSearch({
+      userId: viewer?.userId ?? null,
+      query,
+      language,
+      page,
+      outcome: 'OK',
+      results: result.releases.length,
+      request,
+    });
+    return json(result);
   } catch (err) {
+    logSearch({
+      userId: viewer?.userId ?? null,
+      query,
+      language,
+      page,
+      outcome: 'UPSTREAM_ERROR',
+      request,
+    });
     return fromError(err);
   }
 }

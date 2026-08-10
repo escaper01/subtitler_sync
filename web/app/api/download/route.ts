@@ -1,5 +1,6 @@
 import { fail, fromError, parsePath, preflight, withCors } from '@/lib/api';
 import { downloadSubtitle } from '@/lib/subtitlecat';
+import { enforcing, requireEntitlement } from '@/lib/gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,6 +18,13 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request): Promise<Response> {
   const path = parsePath(new URL(request.url).searchParams.get('path'));
   if (!path) return fail('Which subtitle?', 400);
+
+  // The one that matters most: this is where the bytes actually leave. A client that
+  // skipped search entirely must still be refused here.
+  if (enforcing()) {
+    const gate = await requireEntitlement(request);
+    if (!gate.ok) return gate.response;
+  }
 
   try {
     const { text, filename } = await downloadSubtitle(path);

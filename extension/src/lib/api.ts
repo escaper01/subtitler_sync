@@ -1,4 +1,4 @@
-import type { ReleaseResponse, SearchResponse } from '@/lib/api-types';
+import type { ApiError, ApiErrorCode, MeResponse, ReleaseResponse, SearchResponse } from '@/lib/api-types';
 import { loadAuth } from '@/background/auth';
 
 /**
@@ -22,7 +22,39 @@ const DEFAULT_API_BASE = 'http://localhost:3000';
 
 const TIMEOUT_MS = 20_000;
 
-export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string };
+/**
+ * A failure, with enough detail for the panel to offer a button rather than red text.
+ *
+ * `code` and `action` are optional and come straight from the server: an older build of
+ * this extension simply ignores them, and where "Subscribe" points can change without
+ * shipping an update through Web Store review.
+ */
+export interface ApiFailure {
+  ok: false;
+  error: string;
+  code?: ApiErrorCode;
+  action?: { label: string; url: string };
+}
+
+export type ApiResult<T> = { ok: true; data: T } | ApiFailure;
+
+/**
+ * Read a failed response into an `ApiFailure`.
+ *
+ * One function because there are two fetch call sites — `request()` and the hand-rolled
+ * one in `downloadSubtitle()` — and they drifted apart the last time this was inline.
+ */
+async function readError(response: Response): Promise<ApiFailure> {
+  const body = (await response.json().catch(() => null)) as ApiError | null;
+
+  // A response that is not our JSON means something else answered: a captive portal, a
+  // proxy, a misconfigured apiBase.
+  if (!body || typeof body.error !== 'string') {
+    return { ok: false, error: `The subtitle service returned ${response.status}.` };
+  }
+
+  return { ok: false, error: body.error, code: body.code, action: body.action };
+}
 
 export async function apiBase(): Promise<string> {
   try {
@@ -73,18 +105,7 @@ async function request<T>(path: string, params: Record<string, string>): Promise
     };
   }
 
-  if (!response.ok) {
-    // The API reports its failures as { error }; anything else means it is not our API
-    // answering — a captive portal, a proxy, a misconfigured apiBase.
-    const message = await response
-      .json()
-      .then((body: unknown) =>
-        body && typeof body === 'object' && 'error' in body ? String(body.error) : null,
-      )
-      .catch(() => null);
-
-    return { ok: false, error: message ?? `The subtitle service returned ${response.status}.` };
-  }
+  if (!response.ok) return readError(response);
 
   try {
     return { ok: true, data: (await response.json()) as T };
@@ -108,6 +129,16 @@ export async function fetchRelease(
   return request<ReleaseResponse>('api/release', { path, lang });
 }
 
+/**
+ * Who the extension is signed in as, and whether they may search.
+ *
+ * Never refuses — a signed-out caller gets a truthful "no". Lets the panel label its
+ * button before someone types a title and presses one that was never going to work.
+ */
+export async function fetchMe(): Promise<ApiResult<MeResponse>> {
+  return request<MeResponse>('api/me', {});
+}
+
 /** Fetch a subtitle's text. Returns the text itself, not JSON. */
 export async function downloadSubtitle(
   path: string,
@@ -128,9 +159,9 @@ export async function downloadSubtitle(
     return { ok: false, error: 'Could not download that subtitle.' };
   }
 
-  if (!response.ok) {
-    return { ok: false, error: `Could not download that subtitle (${response.status}).` };
-  }
+  // The same reader as `request<T>()`, so a gated download says "subscribe" rather than
+  // "could not download that subtitle (402)".
+  if (!response.ok) return readError(response);
 
   const header = response.headers.get('X-Subtitle-Filename');
   const filename = header ? safeDecode(header) : 'subtitle.srt';

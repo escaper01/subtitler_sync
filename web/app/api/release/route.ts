@@ -1,5 +1,6 @@
 import { fail, fromError, json, parseLanguage, parsePath, preflight } from '@/lib/api';
 import { filterByLanguage, releaseTracks } from '@/lib/subtitlecat';
+import { enforcing, requireEntitlement } from '@/lib/gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -18,6 +19,13 @@ export async function GET(request: Request): Promise<Response> {
 
   const language = parseLanguage(params.get('lang'));
   if (!language) return fail('Pick a supported language', 400);
+
+  // Gated as well as search: a release path is a shareable string, so leaving this open
+  // would leave a working free API for anyone who has one.
+  if (enforcing()) {
+    const gate = await requireEntitlement(request);
+    if (!gate.ok) return gate.response;
+  }
 
   try {
     const release = await releaseTracks(path);

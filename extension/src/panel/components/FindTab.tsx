@@ -51,9 +51,40 @@ export function FindTab() {
         {searching ? 'Searching…' : 'Search'}
       </Button>
 
-      {find.error && <p className="text-[11px] text-red-300">{find.error}</p>}
+      <Refusal />
 
       <Results />
+    </div>
+  );
+}
+
+/**
+ * What the server said, and what to do about it.
+ *
+ * The panel never decides on its own that someone is locked out — it renders whatever came
+ * back from the request. Two sources of truth drift apart; one does not. So the query box
+ * stays usable and the reason arrives only once a search is actually attempted.
+ */
+function Refusal() {
+  const find = usePanel((s) => s.find);
+  if (!find.error) return null;
+
+  // A plain error is just a sentence. A gated one is a sentence plus a way out.
+  if (!find.code || !find.action) {
+    return <p className="text-[11px] text-red-300">{find.error}</p>;
+  }
+
+  return (
+    <div className="rounded border border-sky-400/30 bg-sky-500/10 px-2 py-2">
+      <p className="text-[11px] leading-relaxed text-white/85">{find.error}</p>
+      <a
+        href={find.action.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 inline-block rounded bg-sky-500 px-2.5 py-1 text-[11px] font-medium text-white transition-colors hover:bg-sky-400"
+      >
+        {find.action.label}
+      </a>
     </div>
   );
 }

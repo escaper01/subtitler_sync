@@ -69,8 +69,46 @@ export interface ReleaseResponse {
   tracks: Track[];
 }
 
+/**
+ * Why a request was refused, in a form the client can branch on.
+ *
+ * The HTTP status is not enough: "sign in", "subscribe" and "your subscription lapsed" all
+ * need different buttons, and some corporate proxies mangle a 402 anyway. Clients branch
+ * on this, never on the status.
+ */
+export type ApiErrorCode =
+  | 'not_signed_in'
+  | 'token_expired'
+  | 'no_subscription'
+  | 'subscription_expired'
+  | 'account_disabled'
+  | 'rate_limited'
+  | 'bad_request'
+  | 'upstream'
+  | 'server';
+
 export interface ApiError {
+  /** A sentence a user could act on. Always present. */
   error: string;
+  /** Optional so an older extension simply ignores it. */
+  code?: ApiErrorCode;
   /** Set when the caller can usefully retry, e.g. upstream rate limiting. */
   retryAfter?: number;
+  /**
+   * What the client should offer to do about it.
+   *
+   * Server-owned on purpose: where "Subscribe" points can change without shipping an
+   * extension update through Web Store review, which takes days.
+   */
+  action?: { label: string; url: string };
+}
+
+/** What `/api/me` answers. Lets the panel label its button before a request fails. */
+export interface MeResponse {
+  signedIn: boolean;
+  email: string | null;
+  entitled: boolean;
+  /** ISO date, or null when there has never been a subscription. */
+  entitledUntil: string | null;
+  source: string | null;
 }
