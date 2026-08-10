@@ -103,10 +103,15 @@ export type ActivationResult = { ok: true } | { ok: false; reason: 'device_limit
  * The device is the extension's anonymous install id. A known device just refreshes its
  * timestamp; a new one takes a slot if there is room.
  *
- * The race matters: two browsers claiming the last free slot at the same moment would both
- * pass a count-then-insert. Instead the insert is attempted first and the
- * `@@unique([licenseId, installId])` constraint plus a re-count inside the transaction
- * decide, so exactly one can win.
+ * The race matters, and a transaction alone does not settle it. Two browsers claiming the
+ * last free slot both count zero under Postgres' default READ COMMITTED — neither sees the
+ * other's uncommitted row — and both insert, because their install ids differ so the
+ * `@@unique([licenseId, installId])` constraint has nothing to fire on. That constraint
+ * only stops the *same* device racing itself.
+ *
+ * So the licence row is locked `FOR UPDATE` first. Claims against one key then queue behind
+ * each other and the count is taken with the outcome already decided; claims against
+ * different keys never touch. Verified by firing two devices at a one-seat licence.
  */
 export async function activate(
   licenseId: string,
@@ -136,6 +141,10 @@ export async function activate(
 
   try {
     return await db.$transaction(async (tx) => {
+      // Serialises every claim against this one licence. Must come before the count, or the
+      // count is a snapshot taken while another transaction is mid-insert.
+      await tx.$queryRaw`SELECT id FROM "License" WHERE id = ${licenseId} FOR UPDATE`;
+
       const taken = await tx.licenseActivation.count({ where: { licenseId } });
       if (taken >= limit) return { ok: false, reason: 'device_limit' } as const;
 
@@ -148,6 +157,56 @@ export async function activate(
     if (isUniqueViolation(err)) return { ok: true };
     throw err;
   }
+}
+
+/**
+ * Adopt a key Lemon Squeezy vouches for but we have no record of.
+ *
+ * This is the missed-webhook recovery path, and it is the most valuable thing in this
+ * file: without it, a delivery that never arrived means a customer who paid finds their
+ * key rejected, and the only fix is a support email. With it, the first request repairs
+ * the gap and every request after is the fast local lookup.
+ *
+ * Returns null when Lemon Squeezy does not recognise the key either — including when we
+ * simply could not reach them, because a key we cannot confirm is not one to open the door
+ * for.
+ */
+export async function recoverLicense(rawKey: string): Promise<string | null> {
+  const { validateKey } = await import('@/lib/lemonsqueezy');
+  const { findOrCreateUser } = await import('@/lib/users');
+  const { grant } = await import('@/lib/entitlement');
+  const { getSettings } = await import('@/lib/settings');
+
+  const checked = await validateKey(normalizeKey(rawKey));
+  if (!checked.valid || !checked.email) return null;
+
+  const user = await findOrCreateUser({ email: checked.email });
+  const settings = await getSettings();
+
+  // Their expiry if they gave one; otherwise a month, which the next webhook corrects.
+  // Erring short is right: too little access is a complaint, too much is a giveaway.
+  const endsAt = checked.expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  await grant({
+    userId: user.id,
+    source: 'LEMON',
+    endsAt,
+    dedupeKey: `lemon:recovered:${checked.externalId ?? hashKey(rawKey)}`,
+    note: 'Recovered from Lemon Squeezy after a missing webhook',
+  });
+
+  const license = await issueLicense({
+    key: rawKey,
+    userId: user.id,
+    source: 'LEMON',
+    externalId: checked.externalId,
+    subscriptionId: checked.subscriptionId,
+    activationLimit: settings.defaultDeviceLimit,
+    note: 'Recovered on first use',
+  });
+
+  console.warn(`[license] recovered ${checked.email} from Lemon Squeezy — a webhook was missed`);
+  return license.id;
 }
 
 export interface IssueInput {
