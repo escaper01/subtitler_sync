@@ -1,15 +1,14 @@
 import { SiteHeader } from '@/components/SiteHeader';
 import { SiteFooter } from '@/components/SiteFooter';
-import { Providers } from '@/components/Providers';
-import { DonationBanner } from '@/components/DonationBanner';
+import { UpgradeBanner } from '@/components/UpgradeBanner';
 
 /**
  * Rendered per request rather than at build time.
  *
- * The donation banner reads its text from the database on every page, and the entire point
- * of putting it there is that it can be changed without a deploy. Statically prerendered,
- * these pages baked in whatever the setting happened to be when the build ran — switching
- * the banner on did nothing until the next release.
+ * These pages read prices and the upgrade prompt from the database, and the whole point of
+ * putting them there is that they change without a deploy. Statically prerendered, the
+ * pages baked in whatever the values were when the build ran — editing a price in the
+ * dashboard did nothing until the next release.
  *
  * The pages are small and the server is already running for the API, so this costs little.
  */
@@ -21,13 +20,11 @@ export const dynamic = 'force-dynamic';
  */
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <Providers>
-      <div className="flex min-h-screen flex-col">
-        <DonationBanner />
-        <SiteHeader />
-        <div className="flex-1">{children}</div>
-        <SiteFooter />
-      </div>
-    </Providers>
+    <div className="flex min-h-screen flex-col">
+      <UpgradeBanner />
+      <SiteHeader />
+      <div className="flex-1">{children}</div>
+      <SiteFooter />
+    </div>
   );
 }

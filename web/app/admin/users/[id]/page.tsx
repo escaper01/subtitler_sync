@@ -54,10 +54,17 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
             createdAt: true,
           },
         },
-        tokens: {
-          where: { revokedAt: null },
+        licenses: {
+          where: { status: 'ACTIVE' },
           orderBy: { createdAt: 'desc' },
-          select: { id: true, label: true, lastUsedAt: true, expiresAt: true },
+          select: {
+            id: true,
+            keyHint: true,
+            source: true,
+            lastUsedAt: true,
+            activationLimit: true,
+            _count: { select: { activations: true } },
+          },
         },
       },
     })
@@ -79,7 +86,9 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
         <Access until={user.entitledUntil} source={user.entitlementSource} />
         <span>joined {user.createdAt.toISOString().slice(0, 10)}</span>
         {user.lastSeenAt && <span>last seen {user.lastSeenAt.toISOString().slice(0, 10)}</span>}
-        <span>{user.tokens.length} signed-in device{user.tokens.length === 1 ? '' : 's'}</span>
+        <span>
+          {user.licenses.length} licence{user.licenses.length === 1 ? '' : 's'}
+        </span>
         {installs > 3 && (
           <span className="rounded border border-drift/30 bg-drift/10 px-1.5 py-0.5 text-drift">
             {installs} installs — possibly shared

@@ -11,11 +11,11 @@ export const dynamic = 'force-dynamic';
  * counts, because a number you cannot act on is decoration.
  */
 export default async function AdminPage() {
-  const [newReports, newFeatures, pendingGrants, users, entitled, searchesToday] =
+  const [newReports, newFeatures, licenses, users, entitled, searchesToday] =
     await Promise.all([
       db.submission.count({ where: { kind: 'REPORT', status: 'NEW' } }),
       db.submission.count({ where: { kind: 'FEATURE', status: 'NEW' } }),
-      db.pendingGrant.count({ where: { status: 'PENDING' } }),
+      db.license.count({ where: { status: 'ACTIVE' } }),
       db.user.count(),
       db.user.count({ where: { entitledUntil: { gt: new Date() } } }),
       db.searchLog.count({
@@ -44,12 +44,7 @@ export default async function AdminPage() {
             value={newFeatures}
             urgent={newFeatures > 0}
           />
-          <Tile
-            href="/admin/codes"
-            label="Payments to hand over"
-            value={pendingGrants}
-            urgent={pendingGrants > 0}
-          />
+          <Tile href="/admin/licenses" label="Active licences" value={licenses} />
         </div>
       </section>
 

@@ -1,5 +1,5 @@
 import { denied, fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
-import { checkLimit, LIMITS } from '@/lib/rateLimit';
+import { checkLimit, searchLimits } from '@/lib/rateLimit';
 import { searchExpanded } from '@/lib/subtitlecat';
 import { enforcing, optionalViewer, requireEntitlement, type Viewer } from '@/lib/gate';
 import { logSearch } from '@/lib/searchLog';
@@ -39,9 +39,9 @@ export async function GET(request: Request): Promise<Response> {
     }
     viewer = gate.viewer;
 
-    // Only meaningful once there is an account to attribute searches to.
-    for (const limit of [LIMITS.searchPerHour, LIMITS.searchPerDay]) {
-      const check = await checkLimit({ ...limit, subject: viewer.userId });
+    // Per licence, not per user: a customer with two keys bought two.
+    for (const limit of await searchLimits()) {
+      const check = await checkLimit({ ...limit, subject: gate.viewer.licenseId });
       if (!check.allowed) {
         logSearch({ userId: viewer.userId, query, language, page, outcome: 'DENIED', request });
         return denied(

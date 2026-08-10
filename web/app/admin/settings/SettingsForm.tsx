@@ -8,6 +8,10 @@ interface Settings {
   message: string;
   color: string;
   url: string;
+  searchPerHour: number;
+  searchPerDay: number;
+  defaultDeviceLimit: number;
+  trialDays: number;
 }
 
 export function SettingsForm({ initial }: { initial: Settings }) {
@@ -21,6 +25,11 @@ export function SettingsForm({ initial }: { initial: Settings }) {
 
   const field =
     'w-full rounded-xl border border-line bg-surface-2 px-3 py-2 text-sm outline-none focus:border-accent';
+
+  const patch = (change: Partial<Settings>) => {
+    setForm((current) => ({ ...current, ...change }));
+    setSaved(false);
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -52,10 +61,10 @@ export function SettingsForm({ initial }: { initial: Settings }) {
         <input
           type="checkbox"
           checked={form.enabled}
-          onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
+          onChange={(e) => patch({ enabled: e.target.checked })}
           className="h-4 w-4 accent-[var(--accent-solid)]"
         />
-        <span className="text-sm font-medium">Show the prompt</span>
+        <span className="text-sm font-medium">Show the upgrade prompt</span>
       </label>
 
       <label className="block">
@@ -67,19 +76,19 @@ export function SettingsForm({ initial }: { initial: Settings }) {
           rows={3}
           maxLength={240}
           value={form.message}
-          onChange={(e) => setForm({ ...form, message: e.target.value })}
+          onChange={(e) => patch({ message: e.target.value })}
           className={`${field} resize-y`}
         />
       </label>
 
       <div className="flex flex-wrap gap-3">
-        <label className="flex-1">
+        <label className="min-w-48 flex-1">
           <span className="mb-1 block text-xs text-muted">Link</span>
           <input
             type="url"
             value={form.url}
-            placeholder="https://…"
-            onChange={(e) => setForm({ ...form, url: e.target.value })}
+            placeholder="https://…/pricing"
+            onChange={(e) => patch({ url: e.target.value })}
             className={field}
           />
         </label>
@@ -90,13 +99,13 @@ export function SettingsForm({ initial }: { initial: Settings }) {
             <input
               type="color"
               value={form.color}
-              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              onChange={(e) => patch({ color: e.target.value })}
               className="h-9 w-12 cursor-pointer rounded-lg border border-line bg-transparent p-1"
             />
             <input
               type="text"
               value={form.color}
-              onChange={(e) => setForm({ ...form, color: e.target.value })}
+              onChange={(e) => patch({ color: e.target.value })}
               className={`${field} w-28 font-mono`}
             />
           </div>
@@ -109,20 +118,69 @@ export function SettingsForm({ initial }: { initial: Settings }) {
           className="rounded-xl border px-4 py-3"
           style={{ borderColor: `${form.color}66`, backgroundColor: `${form.color}14` }}
         >
-          {/* Text, never markup — this same string is rendered inside other people's pages. */}
-          <p className="text-sm leading-relaxed">
-            {form.message || 'Nothing to show yet.'}
-          </p>
-          {form.url && (
-            <span
-              className="mt-2 inline-block rounded-lg px-3 py-1.5 text-xs font-medium text-white"
-              style={{ backgroundColor: form.color }}
-            >
-              Donate
-            </span>
-          )}
+          {/* Text, never markup — this same string renders inside other people's pages. */}
+          <p className="text-sm leading-relaxed">{form.message || 'Nothing to show yet.'}</p>
         </div>
       </div>
+
+      <fieldset className="rounded-2xl border border-line p-4">
+        <legend className="px-1 text-xs text-muted">Limits</legend>
+        <p className="text-xs leading-relaxed text-muted">
+          Per licence, not per person — somebody with two keys bought two. Tightening these
+          takes effect within a minute.
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <label>
+            <span className="mb-1 block text-xs text-muted">Searches / hour</span>
+            <input
+              type="number"
+              min={1}
+              value={form.searchPerHour}
+              onChange={(e) => patch({ searchPerHour: Number(e.target.value) })}
+              className={field}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs text-muted">Searches / day</span>
+            <input
+              type="number"
+              min={1}
+              value={form.searchPerDay}
+              onChange={(e) => patch({ searchPerDay: Number(e.target.value) })}
+              className={field}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs text-muted">Devices / key</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={form.defaultDeviceLimit}
+              onChange={(e) => patch({ defaultDeviceLimit: Number(e.target.value) })}
+              className={field}
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-xs text-muted">Trial days</span>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              value={form.trialDays}
+              onChange={(e) => patch({ trialDays: Number(e.target.value) })}
+              className={field}
+            />
+          </label>
+        </div>
+
+        <p className="mt-3 text-xs leading-relaxed text-muted">
+          Changing the device limit applies to licences issued afterwards. Existing keys keep
+          the limit they were created with, so nobody is locked out of a device they are
+          already using.
+        </p>
+      </fieldset>
 
       {error && <p className="text-sm text-drift">{error}</p>}
       {saved && <p className="text-sm text-accent">Saved.</p>}

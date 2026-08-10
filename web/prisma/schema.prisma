@@ -49,19 +49,22 @@ enum UserStatus {
 
 enum EntitlementSource {
   TRIAL
-  PATREON
-  CODE
+  /// Bought through Lemon Squeezy.
+  LEMON
   /// Granted by hand from the dashboard.
   ADMIN
 }
 
-/// Someone who signed in with Google to use subtitle search.
+/// Somebody who has a licence key.
 ///
-/// Distinct from `Admin`, which is about the dashboard. The two are unrelated: an admin
-/// who wants to use search has a row in both.
+/// **There is no sign-in.** A user row is created when someone buys or takes a trial, from
+/// the email the payment or the trial form supplied. It exists so one person with two keys
+/// is one customer, and so `/admin/users` has something to show — not for authentication.
+///
+/// Distinct from `Admin`, which is about the dashboard and is the only thing that logs in.
 model User {
   id     String     @id @default(cuid())
-  /// Lowercased on write, from the *verified* Google address. The identity everywhere.
+  /// Lowercased on write. From Lemon Squeezy at purchase, or the trial form.
   email  String     @unique
   name   String?
   image  String?
@@ -86,8 +89,7 @@ model User {
   lastSeenAt DateTime?
 
   entitlements Entitlement[]
-  tokens       ExtensionToken[]
-  redemptions  CodeRedemption[]
+  licenses     License[]
   searches     SearchLog[]
 
   /// "Who is entitled / expiring this week", and the reconcile sweep.
@@ -115,11 +117,10 @@ model Entitlement {
   note      String?
   createdAt DateTime  @default(now())
 
-  /// Trial-once, webhook replay and double-redeem, all enforced by one unique index
-  /// instead of three hand-written checks:
-  ///   trial:<emailLower>            (email, not userId — see the note on User)
-  ///   patreon:<memberId>:<lastChargeDate>
-  ///   code:<codeId>:<userId>
+  /// Trial-once and webhook replay, both enforced by one unique index instead of
+  /// hand-written checks:
+  ///   trial:<emailHash>
+  ///   lemon:<subscriptionId>:<renewsAt>
   ///   admin:<cuid>
   dedupeKey String @unique
 
@@ -144,145 +145,113 @@ model TrialClaim {
   claimedAt DateTime @default(now())
 }
 
-/// A long-lived credential the extension sends on every paid request.
+/* ------------------------------------------------------------------- licences */
+
+enum LicenseSource {
+  /// Bought through Lemon Squeezy, which generated the key and emailed it to the buyer.
+  LEMON
+  TRIAL
+  /// Issued by hand from the dashboard.
+  ADMIN
+}
+
+enum LicenseStatus {
+  ACTIVE
+  /// Chargeback, abuse, or a key the buyer asked to have replaced.
+  REVOKED
+}
+
+/// The thing a customer pastes into the extension.
 ///
-/// Opaque and random, not a JWT: revocation has to be instant, and the request hits the
-/// database for entitlement anyway, so one query returns both. Stored as a SHA-256 hash —
-/// see lib/extensionToken.ts for why that is the right hash here and bcrypt is not.
-model ExtensionToken {
-  id     String @id @default(cuid())
+/// This is the credential — there is no sign-in, and no token of our own. For a purchase
+/// the key is Lemon Squeezy's; we only ever see it once, hash it, and recognise it again.
+///
+/// Whether it *works* is a separate question from whether it exists: validity comes from
+/// the owner's `User.entitledUntil`, so a lapsed subscription leaves the key intact and
+/// simply stops opening the door. Renewing revives the same key.
+model License {
+  id String @id @default(cuid())
+  /// sha256 of the key. The buyer keeps the only copy; we never need to show it back.
+  keyHash String @unique
+  /// The first few characters, so a key can be recognised in the dashboard without
+  /// storing enough of it to use.
+  keyHint String
+
+  source LicenseSource
+  status LicenseStatus @default(ACTIVE)
+
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  /// sha256(secret), hex. The secret itself is shown once at mint time and never stored.
-  tokenHash String @unique
-  /// "Chrome on Windows", from the User-Agent at mint time, so a user can tell two devices
-  /// apart on their account page. Never trusted for anything.
-  label String?
+  /// Lemon Squeezy's own ids, so a renewal or cancellation can find this row again.
+  externalId     String? @unique
+  subscriptionId String?
 
-  createdAt DateTime @default(now())
-  /// Written at most once a day, alongside the sliding-expiry bump.
+  /// Copied from `SiteSetting.defaultDeviceLimit` when the licence is created, rather than
+  /// read live — raising or lowering the default must not retroactively lock somebody out
+  /// of a device they are already using.
+  activationLimit Int @default(2)
+
+  createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
-  expiresAt  DateTime
-  revokedAt  DateTime?
-
-  /// The account page's device list, and "revoke everything" for one user.
-  @@index([userId, createdAt])
-  /// The nightly sweep of dead rows.
-  @@index([expiresAt])
-}
-
-/* ---------------------------------------------------------------------- codes */
-
-/// A redeemable code granting `days` of access.
-///
-/// Stored in the clear: the admin has to be able to re-read and re-send a supporter's
-/// code, and it is the ~60 bits of entropy that makes it unguessable, not secrecy at rest.
-/// Redemption is rate limited regardless.
-model SubscriptionCode {
-  id   String @id @default(cuid())
-  /// Uppercase, ambiguity-free alphabet (no O/0/I/1).
-  code String @unique
-  days Int
-
-  /// 1 = a personal claim code for one supporter. Higher = a campaign code.
-  maxRedemptions Int @default(1)
-  /// Kept in step with CodeRedemption by a conditional UPDATE inside the redeem
-  /// transaction. That compare-and-set, not a read-then-write, is what makes a shared code
-  /// impossible to over-redeem under concurrency.
-  redemptionCount Int @default(0)
-
-  /// The code stops working. Distinct from the access it granted, which keeps running.
-  expiresAt  DateTime?
-  disabledAt DateTime?
   note       String?
 
-  createdAt DateTime @default(now())
+  activations LicenseActivation[]
 
-  pendingGrant PendingGrant?
-  redemptions  CodeRedemption[]
-
-  @@index([createdAt])
+  @@index([userId])
+  @@index([subscriptionId])
 }
 
-model CodeRedemption {
-  id     String           @id @default(cuid())
-  codeId String
-  code   SubscriptionCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
-  userId String
-  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  /// sha256(ip + IP_HASH_SALT). Abuse review without keeping a table of IP addresses.
-  ipHash    String?
-  createdAt DateTime @default(now())
-
-  /// One account cannot redeem the same code twice, enforced by the database.
-  @@unique([codeId, userId])
-  /// "Who used this code, and how fast did it spread."
-  @@index([codeId, createdAt])
-}
-
-/* -------------------------------------------------------------------- patreon */
-
-enum PendingGrantStatus {
-  PENDING
-  CLAIMED
-  EXPIRED
-}
-
-/// A payment we could not attach to an account yet.
+/// One device a licence is being used on.
 ///
-/// This is the *normal* path, not an edge case: Patreon omits the supporter's email from
-/// webhook payloads unless the `campaigns.members[email]` scope was granted, and even with
-/// it, the Patreon address is often not the address they sign in with. So a payment always
-/// produces something claimable, and nobody pays and gets nothing.
-model PendingGrant {
-  id     String            @id @default(cuid())
-  source EntitlementSource @default(PATREON)
+/// A "device" is the extension's anonymous per-install id. The unique constraint below is
+/// what enforces the limit: two browsers racing for the last free slot both try to insert,
+/// and exactly one succeeds.
+model LicenseActivation {
+  id        String  @id @default(cuid())
+  licenseId String
+  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
 
-  /// Lowercased, and only when Patreon actually gave us one.
-  email String?
-  /// Patreon's member id — the one identifier that is always present.
-  externalId String
-  days       Int
+  installId  String
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
 
-  status          PendingGrantStatus @default(PENDING)
-  claimedByUserId String?
-  claimedAt       DateTime?
-
-  /// The code the supporter claims it with, created together with this row.
-  codeId String?           @unique
-  code   SubscriptionCode? @relation(fields: [codeId], references: [id])
-
-  /// Same convention as Entitlement.dedupeKey, so a webhook retry cannot make two.
-  dedupeKey String @unique
-  /// The raw delivery, for when someone says "I paid and got nothing".
-  payload Json
-
-  createdAt DateTime @default(now())
-
-  /// The sign-in path: "is there a grant waiting for this brand-new user's address?"
-  @@index([email])
-  /// The admin queue: unclaimed grants, oldest first.
-  @@index([status, createdAt])
+  @@unique([licenseId, installId])
+  @@index([licenseId])
 }
 
-/// A Patreon membership, keyed by the id that survives renewals.
-model PatreonMember {
-  id       String  @id @default(cuid())
-  memberId String  @unique
-  userId   String?
+/* ---------------------------------------------------------------------- plans */
 
-  email          String?
-  tier           String?
-  cents          Int?
-  active         Boolean   @default(true)
-  lastChargeDate DateTime?
-  lastEventAt    DateTime  @default(now())
+enum PlanInterval {
+  TRIAL
+  MONTH
+  YEAR
+}
 
-  /// Current patrons, and the ones we could not attach to an account.
-  @@index([active, lastEventAt])
-  @@index([email])
+/// What the pricing page offers.
+///
+/// In the database rather than in code because prices change and a deploy should not be the
+/// way to change them — and because the same number written in two places drifts apart.
+/// Seeded by prisma/seed.mjs so a fresh install has a working pricing page.
+model Plan {
+  /// `trial` | `monthly` | `yearly`. Stable, and used in URLs.
+  slug String @id
+  name String
+
+  /// Cents. Money is never a float.
+  priceCents Int
+  currency   String       @default("USD")
+  interval   PlanInterval
+  /// How long one purchase grants. 7 for the trial, 30, 365.
+  days Int
+
+  /// The Lemon Squeezy buy link. Empty for the trial, which is handled here.
+  checkoutUrl String?
+  blurb       String?
+  visible     Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  updatedAt DateTime @updatedAt
 }
 
 /* ------------------------------------------------------------------ telemetry */
@@ -340,18 +309,34 @@ model RateLimit {
 
 /// Site settings, as a single row.
 ///
-/// The id is fixed and every write is an upsert, so a second row cannot appear. A
-/// scheduled, multi-row Announcement model is the growth path; on/off plus a message and a
-/// colour is what was asked for, and a singleton is the honest shape for it.
+/// The id is fixed and every write is an upsert, so a second row cannot appear.
+///
+/// Everything here was once a constant in the code. It moved because each one is a number
+/// the operator needs to change in response to something — abuse, cost, a promotion — and
+/// waiting for a deploy to do it is the wrong shape.
 model SiteSetting {
   id String @id @default("singleton")
 
-  donationEnabled Boolean @default(false)
-  donationMessage String  @default("This extension is free. If it saved you an evening, consider chipping in.")
+  /// The upgrade prompt, shown to people without a subscription on the site and in the
+  /// extension panel.
+  promptEnabled Boolean @default(false)
+  promptMessage String  @default("Subtitle search keeps a server running. A subscription is what pays for it.")
   /// Validated `^#[0-9a-fA-F]{6}$` on write — it ends up in inline styles in two codebases,
   /// one of which renders inside other people's pages.
-  donationColor String  @default("#38bdf8")
-  donationUrl   String?
+  promptColor String  @default("#38bdf8")
+  promptUrl   String?
+
+  /// Request limits, per licence. Tighten these when somebody is hammering the API; they
+  /// take effect within a minute rather than at the next deploy.
+  searchPerHour Int @default(60)
+  searchPerDay  Int @default(300)
+
+  /// How many devices a *newly issued* licence may run on. Existing licences keep the
+  /// limit they were created with.
+  defaultDeviceLimit Int @default(2)
+
+  /// How long the free trial lasts.
+  trialDays Int @default(7)
 
   updatedAt DateTime @updatedAt
 }

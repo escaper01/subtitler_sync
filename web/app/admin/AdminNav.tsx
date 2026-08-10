@@ -14,7 +14,6 @@ import { usePathname } from 'next/navigation';
 export interface NavCounts {
   reports: number;
   features: number;
-  codes: number;
 }
 
 const LINKS = [
@@ -22,7 +21,7 @@ const LINKS = [
   { href: '/admin/reports', label: 'Bug reports', icon: BugIcon, exact: false, badge: 'reports' },
   { href: '/admin/features', label: 'Requests', icon: InboxIcon, exact: false, badge: 'features' },
   { href: '/admin/users', label: 'Users', icon: UsersIcon, exact: false, badge: null },
-  { href: '/admin/codes', label: 'Codes', icon: TicketIcon, exact: false, badge: 'codes' },
+  { href: '/admin/licenses', label: 'Licences', icon: TicketIcon, exact: false, badge: null },
   { href: '/admin/settings', label: 'Settings', icon: SlidersIcon, exact: false, badge: null },
   { href: '/admin/api', label: 'API reference', icon: CodeIcon, exact: false, badge: null },
 ] as const;

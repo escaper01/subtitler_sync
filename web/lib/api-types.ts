@@ -77,8 +77,12 @@ export interface ReleaseResponse {
  * on this, never on the status.
  */
 export type ApiErrorCode =
+  /** No licence key was sent at all. */
   | 'not_signed_in'
-  | 'token_expired'
+  /** A key was sent, but we do not recognise it — or it has been revoked. */
+  | 'unknown_key'
+  /** The key is good, but it is already in use on as many devices as it allows. */
+  | 'device_limit'
   | 'no_subscription'
   | 'subscription_expired'
   | 'account_disabled'

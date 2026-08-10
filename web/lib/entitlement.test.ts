@@ -47,9 +47,9 @@ describe.skipIf(!live)('entitlement, against Postgres', () => {
 
     const result = await grant({
       userId: user.id,
-      source: 'CODE',
+      source: 'LEMON',
       days: 30,
-      dedupeKey: `code:${user.id}:first`,
+      dedupeKey: `lemon:${user.id}:first`,
     });
 
     expect(result.granted).toBe(true);
@@ -68,9 +68,9 @@ describe.skipIf(!live)('entitlement, against Postgres', () => {
 
     await grant({
       userId: user.id,
-      source: 'CODE',
+      source: 'LEMON',
       days: 30,
-      dedupeKey: `code:${user.id}:stack`,
+      dedupeKey: `lemon:${user.id}:stack`,
     });
     const afterCode = await entitledUntil(user.id);
 
@@ -87,16 +87,16 @@ describe.skipIf(!live)('entitlement, against Postgres', () => {
     await db.entitlement.create({
       data: {
         userId: user.id,
-        source: 'CODE',
+        source: 'LEMON',
         startsAt: new Date(Date.now() - 31 * DAY),
         endsAt: new Date(Date.now() - 1 * DAY),
-        dedupeKey: `code:${user.id}:lapsed`,
+        dedupeKey: `lemon:${user.id}:lapsed`,
       },
     });
     await db.$transaction(async (tx) => recompute(tx, user.id));
 
     const before = Date.now();
-    await grant({ userId: user.id, source: 'CODE', days: 30, dedupeKey: `code:${user.id}:renew` });
+    await grant({ userId: user.id, source: 'LEMON', days: 30, dedupeKey: `lemon:${user.id}:renew` });
 
     // Not backdated onto the expired period — that would waste a day of what was bought.
     const until = await entitledUntil(user.id);
@@ -105,10 +105,10 @@ describe.skipIf(!live)('entitlement, against Postgres', () => {
 
   it('refuses a duplicate dedupeKey instead of granting twice', async () => {
     const user = await makeUser();
-    const key = `patreon:member-1:2026-08-01`;
+    const key = `lemon:sub-1:2026-08-01`;
 
-    const first = await grant({ userId: user.id, source: 'PATREON', days: 30, dedupeKey: key });
-    const replay = await grant({ userId: user.id, source: 'PATREON', days: 30, dedupeKey: key });
+    const first = await grant({ userId: user.id, source: 'LEMON', days: 30, dedupeKey: key });
+    const replay = await grant({ userId: user.id, source: 'LEMON', days: 30, dedupeKey: key });
 
     expect(first.granted).toBe(true);
     expect(replay).toEqual({ granted: false, reason: 'duplicate' });
@@ -134,7 +134,7 @@ describe.skipIf(!live)('entitlement, against Postgres', () => {
   it('drops back to the next-furthest period when one is revoked', async () => {
     const user = await makeUser();
 
-    await grant({ userId: user.id, source: 'CODE', days: 10, dedupeKey: `code:${user.id}:short` });
+    await grant({ userId: user.id, source: 'LEMON', days: 10, dedupeKey: `lemon:${user.id}:short` });
     const long = await db.entitlement.create({
       data: {
         userId: user.id,

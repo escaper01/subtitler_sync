@@ -14,18 +14,18 @@ export const dynamic = 'force-dynamic';
  */
 async function navCounts(): Promise<NavCounts> {
   try {
-    const [submissions, codes] = await Promise.all([
-      db.submission.groupBy({ by: ['kind'], where: { status: 'NEW' }, _count: true }),
-      db.pendingGrant.count({ where: { status: 'PENDING' } }),
-    ]);
+    const submissions = await db.submission.groupBy({
+      by: ['kind'],
+      where: { status: 'NEW' },
+      _count: true,
+    });
 
     return {
       reports: submissions.find((row) => row.kind === 'REPORT')?._count ?? 0,
       features: submissions.find((row) => row.kind === 'FEATURE')?._count ?? 0,
-      codes,
     };
   } catch {
-    return { reports: 0, features: 0, codes: 0 };
+    return { reports: 0, features: 0 };
   }
 }
 

@@ -1,19 +1,18 @@
 import type { AuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { isAdminEmail } from '@/lib/admins';
-import { onSignIn } from '@/lib/users';
 
 /**
- * Authentication, for everyone.
+ * Authentication — for the dashboard, and nothing else.
  *
- * One NextAuth instance serves two audiences: end users who want subtitle search, and the
- * handful of admins who can open the dashboard. **Signing in no longer implies anything.**
- * It used to: `signIn` refused every address that was not in the `Admin` table, so a
- * session simply could not exist for a stranger.
+ * Customers never sign in. They buy a licence key, paste it into the extension, and the
+ * key is their credential; see `lib/license.ts`. So this instance exists solely for
+ * `/admin`, and `signIn` refuses any address that is not in the `Admin` table — meaning a
+ * stranger cannot hold a session at all.
  *
- * That property is gone deliberately, and its absence is load-bearing — `token.isAdmin`
- * plus `middleware.ts` plus `requireAdmin()` are now the only things between a signed-in
- * user and the dashboard. Every `/api/admin/*` route must call `requireAdmin()`.
+ * That property is worth protecting. `requireAdmin()` still re-checks on every
+ * `/api/admin/*` route rather than relying on it, because defence that depends on one
+ * callback staying strict is not defence.
  */
 
 /**
@@ -49,19 +48,11 @@ export const authOptions: AuthOptions = {
     async signIn({ profile }) {
       const email = profile?.email;
       // Without `email_verified` a federated account could in principle assert an address
-      // it does not own — and the address is the identity for entitlements.
+      // it does not own.
       const verified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
       if (!email || verified === false) return false;
 
-      // Throwing here refuses the sign-in, which is the correct direction to fail: better
-      // no session than a session with no account behind it.
-      await onSignIn({
-        email,
-        name: profile?.name ?? null,
-        image: (profile as { picture?: string } | undefined)?.picture ?? null,
-      });
-
-      return true;
+      return isAdminEmail(email);
     },
 
     async jwt({ token }) {

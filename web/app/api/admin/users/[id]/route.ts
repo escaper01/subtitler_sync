@@ -75,11 +75,11 @@ export async function POST(
 
     case 'ban': {
       await db.user.update({ where: { id }, data: { status: 'BANNED' } });
-      // Sign every device out at once. The gate refuses a banned user anyway, but leaving
-      // live tokens behind would mean unbanning silently restores them too.
-      await db.extensionToken.updateMany({
-        where: { userId: id, revokedAt: null },
-        data: { revokedAt: new Date() },
+      // Kill every key at once. The gate refuses a banned user anyway, but leaving live
+      // licences behind would mean unbanning silently restores them too.
+      await db.license.updateMany({
+        where: { userId: id, status: 'ACTIVE' },
+        data: { status: 'REVOKED' },
       });
       console.warn(`[admin] ${gate.email} banned ${user.email}`);
       return json({ ok: true });

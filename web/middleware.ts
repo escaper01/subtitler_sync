@@ -7,11 +7,10 @@ import { NextResponse } from 'next/server';
  * Two different requirements share one matcher, because `withAuth` has a single
  * `authorized` callback for every path it covers:
  *
- *   /admin/*     needs a session AND `token.isAdmin`
- *   /account, /connect   need only a session
+ *   /admin/*  needs a session AND `token.isAdmin`
  *
- * So `authorized` asks for a token, and the admin part is discriminated in the function
- * body below.
+ * Customers have no session at all — they hold a licence key, which the API checks. So the
+ * only thing gated here is the dashboard.
  *
  * A client-side guard would not do for `/admin`: it renders null only after hydration, by
  * which point the whole page bundle — and anything a server component fetched into it —
@@ -45,5 +44,5 @@ export default withAuth(
 export const config = {
   // The bare '/admin' is listed separately because the negative-lookahead pattern does not
   // match a path with no trailing segment.
-  matcher: ['/admin', '/admin/((?!login).*)', '/account/:path*', '/connect/:path*'],
+  matcher: ['/admin', '/admin/((?!login).*)'],
 };

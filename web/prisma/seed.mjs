@@ -20,6 +20,43 @@ import { loadEnv } from './load-env.mjs';
 
 const ADMINS = [{ email: 'assaoui54@gmail.com', name: 'Osama' }];
 
+/**
+ * Starting prices. Change them in the dashboard, not here — this only seeds an empty
+ * database, and re-running the seed deliberately leaves existing rows alone.
+ *
+ * `checkoutUrl` is blank until the Lemon Squeezy products exist; the pricing page shows
+ * such a plan as "coming soon" rather than a button that goes nowhere.
+ */
+const PLANS = [
+  {
+    slug: 'trial',
+    name: 'Free trial',
+    priceCents: 0,
+    interval: 'TRIAL',
+    days: 7,
+    blurb: 'Seven days of subtitle search. One per email address.',
+    sortOrder: 0,
+  },
+  {
+    slug: 'monthly',
+    name: 'Monthly',
+    priceCents: 200,
+    interval: 'MONTH',
+    days: 30,
+    blurb: 'Unlimited subtitle search. Cancel whenever you like.',
+    sortOrder: 1,
+  },
+  {
+    slug: 'yearly',
+    name: 'Yearly',
+    priceCents: 1900,
+    interval: 'YEAR',
+    days: 365,
+    blurb: 'The same thing, about two months free.',
+    sortOrder: 2,
+  },
+];
+
 loadEnv();
 
 const connectionString = process.env.DATABASE_URL;
@@ -54,6 +91,13 @@ try {
     create: { id: 'singleton' },
   });
   console.log('site settings: ready');
+
+  // Starting prices. `update: {}` again — once the dashboard has been used, the database
+  // is the truth and re-seeding must not undo a price change.
+  for (const plan of PLANS) {
+    await prisma.plan.upsert({ where: { slug: plan.slug }, update: {}, create: plan });
+  }
+  console.log(`plans: ${PLANS.map((plan) => plan.slug).join(', ')}`);
 } catch (err) {
   console.error('Seeding failed:', err instanceof Error ? err.message : err);
   process.exitCode = 1;

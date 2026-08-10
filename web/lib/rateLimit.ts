@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getSettings } from '@/lib/settings';
 
 /**
  * Fixed-window counters, in Postgres.
@@ -26,12 +27,29 @@ export interface LimitResult {
   retryAfter: number;
 }
 
+/**
+ * The search limits, read from the dashboard rather than hard-coded.
+ *
+ * A limit you cannot change without a deploy is a limit you will not change while somebody
+ * is abusing the API, which is the only moment it matters.
+ */
+export async function searchLimits(): Promise<Array<Omit<Limit, 'subject'>>> {
+  const settings = await getSettings();
+  return [
+    { bucket: 'search:license', max: settings.searchPerHour, windowSeconds: 3600 },
+    { bucket: 'search:license:day', max: settings.searchPerDay, windowSeconds: 86_400 },
+  ];
+}
+
+/**
+ * Fixed limits that protect endpoints rather than customers.
+ *
+ * These stay in code: they exist to make guessing and spamming pointless, and there is no
+ * operational reason to relax them.
+ */
 export const LIMITS = {
-  /** Generous for a person, tight for a shared login. */
-  searchPerHour: { bucket: 'search:user', max: 60, windowSeconds: 3600 },
-  searchPerDay: { bucket: 'search:user:day', max: 300, windowSeconds: 86_400 },
-  /** 60-bit codes make guessing hopeless already; this makes it pointless. */
-  redeemPerHour: { bucket: 'redeem:ip', max: 5, windowSeconds: 3600 },
+  /** Trial requests, so one person cannot mint keys for a hundred throwaway addresses. */
+  trialPerIpPerDay: { bucket: 'trial:ip', max: 3, windowSeconds: 86_400 },
 } as const;
 
 /**

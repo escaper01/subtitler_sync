@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 
 /**
- * The donation prompt, as configured from the dashboard.
+ * The upgrade prompt, as configured from the dashboard.
  *
  * Its text and colour are admin-supplied and end up rendered inside *other people's pages*
  * by the extension. So both are validated on the way in and rendered as text on the way
@@ -55,20 +55,20 @@ export const NO_ANNOUNCEMENT: Announcement = {
  *
  * `entitled` is decided server-side from their token, never asked for by the client — so a
  * signed-out caller cannot request the subscriber-only variant, and a subscriber is not
- * nagged for money they have already given.
+ * asked for money they have already paid.
  */
 export async function announcementFor(entitled: boolean): Promise<Announcement> {
   if (entitled) return NO_ANNOUNCEMENT;
 
   try {
     const setting = await db.siteSetting.findUnique({ where: { id: 'singleton' } });
-    if (!setting?.donationEnabled) return NO_ANNOUNCEMENT;
+    if (!setting?.promptEnabled) return NO_ANNOUNCEMENT;
 
     return {
       enabled: true,
-      message: safeMessage(setting.donationMessage),
-      color: safeColor(setting.donationColor),
-      url: safeUrl(setting.donationUrl),
+      message: safeMessage(setting.promptMessage),
+      color: safeColor(setting.promptColor),
+      url: safeUrl(setting.promptUrl),
     };
   } catch {
     // A banner is never worth failing a request over.
