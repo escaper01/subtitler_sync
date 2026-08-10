@@ -127,12 +127,71 @@ separately. Images are 16:10.
 **The store URL** is a placeholder in `lib/site.ts` until the listing is published. Set
 `NEXT_PUBLIC_STORE_URL` and every "Add to Chrome" button follows.
 
+## Accounts, money and the gate
+
+Four files carry the whole model. Read them in this order.
+
+**`lib/entitlement.ts` — the only writer of `User.entitledUntil`.** `Entitlement` rows are an
+append-only ledger; that column is a cache of `max(endsAt)` written *only* by `recompute`,
+always in the same transaction as the row that changed it. Every paid request reads that one
+column, so the hot path is a single indexed lookup returning identity and access together.
+If anything else writes it, the ledger and the cache drift and someone loses access they paid
+for.
+
+Periods **stack**: a new one starts at `max(now, entitledUntil)`, so buying early never costs
+the buyer days. Idempotency rides on the `dedupeKey` unique index — trial-once, webhook
+replay and double-redeem all fail on one constraint instead of three hand-written checks.
+
+The trial is recorded in `TrialClaim`, which has **no relation to `User`** on purpose:
+entitlements cascade on account deletion, so recording it only on the ledger meant
+delete-and-sign-up-again minted a fresh seven days forever. The address is hashed, so an
+account can still be erased.
+
+**`lib/extensionToken.ts` — the credential.** Opaque and random, not a JWT: revocation has to
+be instant, and the request reads the database anyway. Hashed with SHA-256 and **not** bcrypt
+— the secret is 256 CSPRNG bits, so there is nothing to slow an attacker down over, and a
+slow KDF would land on every API call. The token is `stx_<id>_<secret>`; parse it with
+`parseToken`, never `split('_')`, because base64url **contains underscores** and about half
+of all real tokens have one.
+
+**`lib/gate.ts` — the enforcement.** `requireEntitlement` runs on `search`, `release` **and**
+`download`. All three: a release path is a shareable string, so gating only search leaves the
+other two as a free API for anyone holding one. It returns a ready-made `Response`, so a
+route cannot forget the denial. Refusals carry an `ApiErrorCode` and often an `action` button
+whose URL is server-owned — it can change without an extension update going through review.
+
+`ENFORCE_ENTITLEMENT` is the rollout switch and defaults to **off**. The build that *sends*
+`X-Subtitler-Key` must reach users before the server *requires* it; enforcing first breaks
+search for everyone already installed, with no server-side way to undo it.
+
+**`lib/codes.ts` and `lib/patreon.ts` — taking money.** A code use is claimed with a
+conditional `UPDATE ... WHERE redemptionCount < maxRedemptions`, in raw SQL because that
+comparison is column-to-column. This is not a style choice: a read followed by a write lets
+two simultaneous redemptions of the last use both succeed. Patreon signs with **HMAC-MD5 over
+the raw body** — read `request.text()` once and verify against those bytes, never against a
+re-serialised object. It usually sends **no email**, so the claimable-code path is the normal
+one and every payment leaves something to send. A cancelled pledge keeps the period it paid
+for; `revokedAt` is for chargebacks.
+
+Never add `Access-Control-Allow-Credentials` beside the wildcard origin. The token travels in
+a header precisely so a hostile page can never have the browser attach it.
+
 ## Admin
 
 `/admin` is the submissions queue; `/admin/api` is the API reference, which used to sit on
 the public home page. Navigation is a left rail (`AdminNav`) that collapses to a strip of
 links on narrow screens. Both pages are gated in `middleware.ts` — server-side, before the
 route is served. A client-side guard would still ship the page bundle to a stranger.
+
+`/admin` has an overview, split queues for reports and requests, users, codes and settings.
+Badge counts come from a `groupBy` in the layout — the queue pages cap at 200 rows and
+filter by status, so counting fetched rows was wrong in both directions.
+
+**Signing in no longer implies anything.** It used to: `signIn` refused every address not in
+the `Admin` table, so a stranger could not hold a session at all. That property is gone
+deliberately, which makes `requireAdmin()` load-bearing — **every** `/api/admin/*` route must
+call it, because middleware covers `/admin/*` pages only and cannot reach Prisma from the
+edge runtime anyway.
 
 Auth is NextAuth + Google, checked against the **`Admin` table**. There is no user table
 and no roles, because there is exactly one kind of user. `isAdmin` is re-derived from the

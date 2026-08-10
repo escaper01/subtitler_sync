@@ -287,6 +287,28 @@ The search box is *seeded* from the tab's title via `guessSearchTitle`, never se
 automatically: the guess is often right and sometimes comically wrong, and the user is looking
 straight at an editable input either way.
 
+**Search is a paid feature; loading your own file is not, and never will be.** `SubtitlesTab`
+touches none of the auth code — that is the promise the product rests on.
+
+Sign-in cannot happen in the panel: it is a content script inside somebody else's document,
+under their CSP, and cannot open tabs. The worker opens `{apiBase}/connect`, the site signs
+the user in, and the page hands a token back over `externally_connectable`. The token lives in
+`chrome.storage.local` — **never `sync`**, which would push a bearer credential to Google's
+servers and every machine on the profile — and is read only by `lib/api.ts`, which attaches it
+as `X-Subtitler-Key` in **both** its fetch call sites. Missing the hand-rolled one inside
+`downloadSubtitle` is the easy mistake.
+
+`externally_connectable` needs a stable extension id, which is why the manifest pins a `key`.
+`extension/key.pem` is git-ignored: **back it up and upload the same key to the Web Store**,
+or the published id will not match what the site is configured for and sign-in will work
+locally while failing for everyone else. Adding a real domain means adding it to
+`externally_connectable.matches` too — that list is a hard allowlist, and a site not on it is
+silently ignored, which looks exactly like the extension not being installed.
+
+**The panel never decides on its own that someone is locked out.** It renders whatever the
+server returned — `find.code` and `find.action` beside the existing `find.error`. Two sources
+of truth drift apart; one does not.
+
 **One language, not several.** It lives in `storage.sync` under `langs` and defaults to `en`; the
 loader still accepts the array earlier versions wrote and takes its first entry, so nobody's
 choice is silently reset. The API takes exactly one language and rejects codes it does not
