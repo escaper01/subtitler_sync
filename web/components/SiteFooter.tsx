@@ -62,6 +62,11 @@ export function SiteFooter() {
                 Request a feature
               </Link>
             </li>
+            <li>
+              <Link href="/privacy" className="text-muted transition-colors hover:text-accent">
+                Privacy
+              </Link>
+            </li>
           </ul>
         </nav>
       </div>

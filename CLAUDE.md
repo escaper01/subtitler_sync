@@ -7,6 +7,10 @@ extension/   Chrome/Edge MV3 extension — the subtitle overlay and sync tool
 web/         Next.js app — the subtitle search API, and (later) the admin dashboard
 ```
 
+**Setting it up, or deploying it: see [`SETUP.md`](./SETUP.md).** That is the ordered
+sequence, from an empty machine to a live extension. The order in its Part C matters — turning
+enforcement on too early breaks search for everyone already installed.
+
 Each has its own `package.json`, its own install, and its own `CLAUDE.md` with the detail that
 matters when working inside it. **There is no workspace tooling** — `npm install` in each folder,
 separately. Read `extension/CLAUDE.md` before touching the extension; it documents constraints
@@ -69,15 +73,9 @@ npm run db:seed` — Postgres runs in Docker (`web/docker-compose.yml`) and the 
 table, seeded from `web/prisma/seed.mjs`. The only values you must fetch by hand are the Google
 OAuth client id and secret, and they gate nothing but `/admin`. See `web/CLAUDE.md`.
 
-Before going live, in this order:
+Going live is four ordered steps — deploy, repoint, publish, *then* enforce — set out in
+[`SETUP.md`](./SETUP.md) Part C. The order is the whole point.
 
-1. **Deploy `web/`** and set `NEXT_PUBLIC_SITE_URL`, `NEXTAUTH_URL`, and a production
-   `DATABASE_URL`. Add the real origin to `externally_connectable.matches` in the extension
-   manifest, and to the Google OAuth redirect URIs.
-2. **Point the extension at it** — `chrome.storage.sync.set({ apiBase })`, or change
-   `DEFAULT_API_BASE` in `extension/src/lib/api.ts`.
-3. **Publish the extension**, signed with `extension/key.pem`, and let the update propagate.
-4. **Only then** set `ENFORCE_ENTITLEMENT=true`.
-
-Still open: a privacy policy page, which the Web Store will ask for — search terms are stored
-against an account and kept indefinitely. Telemetry beyond `SearchLog` is not built.
+The privacy policy lives at `/privacy` and is written from what the code actually stores.
+**If you change what is collected, change that page in the same commit** — the Web Store
+listing points at it. Telemetry beyond `SearchLog` is not built.
