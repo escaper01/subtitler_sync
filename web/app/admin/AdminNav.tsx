@@ -12,6 +12,7 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/admin', label: 'Submissions', icon: InboxIcon, exact: true },
+  { href: '/admin/codes', label: 'Codes', icon: TicketIcon, exact: false },
   { href: '/admin/api', label: 'API reference', icon: CodeIcon, exact: false },
 ];
 
@@ -46,6 +47,15 @@ function InboxIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
       <path strokeLinejoin="round" d="M3 13h4l1.5 3h7L17 13h4M3 13l2.2-7.2A2 2 0 0 1 7.1 4.4h9.8a2 2 0 0 1 1.9 1.4L21 13v4.6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V13Z" />
+    </svg>
+  );
+}
+
+function TicketIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path strokeLinejoin="round" d="M3 9.2V7a1.5 1.5 0 0 1 1.5-1.5h15A1.5 1.5 0 0 1 21 7v2.2a2.8 2.8 0 0 0 0 5.6V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17v-2.2a2.8 2.8 0 0 0 0-5.6Z" />
+      <path strokeLinecap="round" d="M14 6v12" strokeDasharray="2 2.5" />
     </svg>
   );
 }

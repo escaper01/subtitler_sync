@@ -97,7 +97,22 @@ export type GrantResult =
  * retry arriving in parallel, and this cannot.
  */
 export async function grant(input: GrantInput): Promise<GrantResult> {
-  return db.$transaction(async (tx) => {
+  return db.$transaction((tx) => grantWithin(tx, input));
+}
+
+/**
+ * The same grant, inside a transaction the caller already owns.
+ *
+ * Redeeming a code has to increment a counter, record the redemption and grant the period
+ * as one indivisible step — if the grant fails, the code must not have been spent. Calling
+ * `grant()` from inside that transaction would open a *second*, independent one, and the
+ * two could not roll back together.
+ */
+export async function grantWithin(
+  tx: Prisma.TransactionClient,
+  input: GrantInput,
+): Promise<GrantResult> {
+  {
     const user = await tx.user.findUnique({
       where: { id: input.userId },
       select: { entitledUntil: true },
@@ -132,7 +147,7 @@ export async function grant(input: GrantInput): Promise<GrantResult> {
 
     await recompute(tx, input.userId);
     return { granted: true, endsAt } as const;
-  });
+  }
 }
 
 /**
