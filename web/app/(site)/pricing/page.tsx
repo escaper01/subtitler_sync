@@ -85,9 +85,8 @@ export default async function PricingPage() {
         </div>
 
         <p className="mt-4 text-sm leading-relaxed text-muted">
-          Payment is handled by Lemon Squeezy. They email you a licence key the moment you
-          subscribe — you paste it into the extension and that is the whole setup. No account
-          to create, no password to forget.
+          You get a licence key when your subscription starts. Paste it into the extension and
+          that is the whole setup — the extension itself never signs in.
         </p>
       </section>
 
@@ -123,8 +122,10 @@ export default async function PricingPage() {
             changes — your own subtitle files carry on working exactly as before.
           </Faq>
           <Faq q="I lost my key.">
-            Lemon Squeezy emailed it to you when you subscribed, so it is in your inbox. If
-            you cannot find it, send a report and it can be reissued.
+            Sign in and check your account page — it lists the keys on your account. Only the
+            first few characters are shown, because what is stored is a hash rather than the key
+            itself, so if you have genuinely lost it, send a report and a replacement can be
+            issued.
           </Faq>
           <Faq q="Can I use it on my laptop and my desktop?">
             Yes. A key works on {(await deviceLimit()) ?? 2} devices at once.

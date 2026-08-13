@@ -112,27 +112,26 @@ the host's dashboard — `.env.example` explains each one:
 | `NEXTAUTH_URL` | `https://your-domain` |
 | `NEXT_PUBLIC_SITE_URL` | `https://your-domain` — used to build the links the extension opens |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | From the OAuth client. These gate `/admin` and nothing else. |
-| `LEMONSQUEEZY_WEBHOOK_SECRET` | Part D. Without it every delivery is refused. |
-| `LEMONSQUEEZY_API_KEY` / `LEMONSQUEEZY_STORE_ID` | Part D. Only used to rescue a key we have no record of. |
+| `DEVICE_HASH_SALT` | Generate one. See below. Salts the sign-in device fingerprint. |
 | `RESEND_API_KEY` / `EMAIL_FROM` | Part D. Without them the trial form cannot send. |
 | `IP_HASH_SALT` | Generate one. See below. |
 | `TRIAL_HASH_SALT` | Generate one. See below. **Changing it later gives everyone a fresh trial.** |
 | `NEXT_PUBLIC_STORE_URL` | The Web Store listing, once step 3 is done |
 | `ENFORCE_ENTITLEMENT` | **Leave unset for now.** Step 4 turns it on. |
 
-Three of those you generate rather than fetch from anywhere — `NEXTAUTH_SECRET`,
-`TRIAL_HASH_SALT` and `IP_HASH_SALT`:
+Four of those you generate rather than fetch from anywhere — `NEXTAUTH_SECRET`,
+`TRIAL_HASH_SALT`, `IP_HASH_SALT` and `DEVICE_HASH_SALT`:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
 Run it **once per variable**, and use fresh values here rather than the ones from your
-development `.env`. Each is a separate secret: `NEXTAUTH_SECRET` signs the admin session
-cookie, `TRIAL_HASH_SALT` decides whether an address has already used its trial, and
-`IP_HASH_SALT` only salts abuse-detection history. Reusing one value across all three means
-you can never rotate the harmless one without also signing everyone out and reissuing every
-trial.
+development `.env`. Each is a separate secret with a different blast radius:
+`NEXTAUTH_SECRET` signs the session cookie, `TRIAL_HASH_SALT` decides whether an address has
+already used its trial, `IP_HASH_SALT` salts abuse-detection history, and `DEVICE_HASH_SALT`
+salts the sign-in device fingerprint. Reusing one value across all four means you can never
+rotate the harmless one without also signing everyone out and reissuing every trial.
 
 Then run the migrations against the production database once:
 
@@ -201,43 +200,47 @@ instant.
 
 ## Part D — Taking money
 
-Lemon Squeezy is the shop, and the reason the extension has no sign-in: it generates a
-licence key at checkout, emails it to the buyer itself, and stops honouring it when the
-subscription ends. Nothing has to be matched up by hand.
+**There is no payment provider wired up.** Lemon Squeezy was removed after they declined the
+product, and nothing has replaced it yet. Everything else in this part still works: people can
+sign in, take a trial, hold a licence key and be gated on it — access is simply granted by
+hand until a provider is chosen.
 
-### 1. The store and the two products
+### 1. Granting access without a provider
 
-1. Create a store at [lemonsqueezy.com](https://www.lemonsqueezy.com). It starts in **test
-   mode** — stay there until the whole flow works end to end.
-2. Create two subscription products: **Monthly** and **Yearly**.
-3. On each one, turn **licence keys** on:
-   - *Generate licence keys* — **yes**
-   - *Activation limit* — **2**, matching the default in `/admin/settings`
-   - *Expires with subscription* — **yes**. Without this a cancelled customer keeps a key
-     that our database has already stopped honouring, which reads as a bug to them.
-4. Copy each product's checkout URL.
+`/admin/users` → pick the account → **Give or take access**. That writes an `ADMIN`
+entitlement, which the gate honours exactly like a purchased one. Issue them a key from
+`/admin/licenses` and they can paste it into the extension.
 
-### 2. Tell the site about them
+Fine for a handful of people. It does not scale, and it is not meant to.
+
+### 2. Wiring up a replacement
+
+The money model was built so the provider is a seam rather than a rewrite. What survived
+Lemon Squeezy's removal untouched: the entitlement ledger, the licence keys, the device limit,
+the gate, the plans, and the extension.
+
+A replacement has to supply three things:
+
+- **A webhook route** under `app/api/webhooks/<provider>/`, verifying the signature over the
+  **raw** request body — read `request.text()` once and check those bytes, never a
+  re-serialised object. It calls `grant()` with the provider's own event id as the
+  `dedupeKey`, which is what makes a replayed delivery harmless.
+- **A key-validation call**, so an unknown key can be checked once against the provider
+  before being refused. `lib/license.ts` keeps a note where `recoverLicense()` used to live.
+  Skipping this means a lost webhook is a paying customer whose key does not work.
+- **A checkout URL per plan**, pasted at `/admin/settings` → **Plans**, not hardcoded.
+
+Whichever provider it is, two rules carry over. **A cancellation does not cut anyone off** —
+the period already paid for runs out on its own; revocation is for chargebacks. And prices
+live in the database, so a change is a form submission rather than a deploy.
+
+### 3. Tell the site about the plans
 
 `/admin/settings` → **Plans**. Set the price and paste the checkout URL for each. Prices are
 entered in currency and stored in cents, and the pricing page reads them on every request —
 no deploy, no rebuild.
 
 The trial plan has no checkout URL. It is handled here, not there.
-
-### 3. The webhook
-
-1. Lemon Squeezy → Settings → **Webhooks** → add one at
-   `https://your-domain/api/webhooks/lemonsqueezy`.
-2. Subscribe to `subscription_created`, `subscription_updated`,
-   `subscription_payment_success`, `subscription_expired`, `subscription_cancelled`,
-   `license_key_created`.
-3. Copy the signing secret into `LEMONSQUEEZY_WEBHOOK_SECRET`.
-
-Then buy your own monthly plan in test mode. You should get an email with a key, see the
-licence at `/admin/licenses`, and be able to paste it into the extension popup and search.
-
-**A cancellation does not cut anyone off.** The period already paid for runs out on its own.
 
 ### 4. Resend, for trial keys
 
@@ -275,7 +278,7 @@ time without issuing a key.
 | Symptom | Almost always |
 |---|---|
 | Search finds nothing, for everybody | subtitlecat changed their markup. `LIVE=1 npm test` in `web/`, then fix the selectors in `lib/subtitlecat/parse.ts` and deploy. No extension release needed. |
-| A customer's key is refused | Check `/admin/licenses`. If it is not there, the webhook never arrived — the next request they make repairs it automatically, provided `LEMONSQUEEZY_API_KEY` is set. |
+| A customer's key is refused | Check `/admin/licenses`. If it is not there, nothing will repair it on its own — the self-healing recovery path went with Lemon Squeezy. Grant access at `/admin/users` and issue a key by hand. |
 | "You are using this key on too many devices" | They are, or they reinstalled twice. Raise the licence's own limit at `/admin/licenses`, which does not touch anyone else's. |
 | Trial emails never arrive | The Resend domain is not verified. Nobody has lost their trial — the claim is rolled back with the send. |
 | `/admin` sign-in bounces with no error | The Google redirect URI does not match `NEXTAUTH_URL` exactly. |

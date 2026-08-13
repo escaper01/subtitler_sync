@@ -26,7 +26,7 @@ export default async function SettingsPage() {
         <h2 className="font-display text-lg font-bold tracking-tight">Plans</h2>
         <p className="mt-1 text-sm leading-relaxed text-muted">
           What the pricing page offers. Prices take effect immediately — the public pages are
-          rendered per request. The checkout link is the Lemon Squeezy buy URL; a plan
+          rendered per request. The checkout link is your payment provider&rsquo;s buy URL; a plan
           without one shows as &ldquo;coming soon&rdquo; rather than a button that goes nowhere.
         </p>
         <div className="mt-5">

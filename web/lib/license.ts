@@ -5,9 +5,10 @@ import { db } from '@/lib/db';
 /**
  * Licence keys — the credential, replacing the old sign-in token.
  *
- * There is no account to log into. A key is issued by Lemon Squeezy at checkout (or by us
- * for a trial or an admin grant), the customer pastes it into the extension, and every
- * request carries it. We see the key once, hash it, and recognise it afterwards.
+ * The extension never signs in, whatever the website does. A key is issued to the customer
+ * — by us for a trial or an admin grant, or by a payment provider at checkout — they paste
+ * it into the extension, and every request carries it. We see the key once, hash it, and
+ * recognise it afterwards.
  *
  * **Existing and working are separate questions.** The key identifies its owner; whether
  * that owner may search comes from `User.entitledUntil`, exactly as before. So a lapsed
@@ -24,8 +25,8 @@ export function hashKey(key: string): string {
 }
 
 /**
- * Trim and upper-case. Lemon Squeezy keys are UUID-shaped, and people paste them with
- * stray whitespace out of emails; neither should be the difference between working and not.
+ * Trim and upper-case. Keys are UUID-shaped, and people paste them out of emails with
+ * stray whitespace; neither should be the difference between working and not.
  */
 export function normalizeKey(key: string): string {
   return key.trim();
@@ -160,59 +161,23 @@ export async function activate(
 }
 
 /**
- * Adopt a key Lemon Squeezy vouches for but we have no record of.
+ * There is no self-healing recovery path at the moment.
  *
- * This is the missed-webhook recovery path, and it is the most valuable thing in this
- * file: without it, a delivery that never arrived means a customer who paid finds their
- * key rejected, and the only fix is a support email. With it, the first request repairs
- * the gap and every request after is the fast local lookup.
+ * There used to be: a key we had no record of was checked against Lemon Squeezy once, and
+ * if they vouched for it the rows were created on the spot. It was the most valuable thing
+ * in this file, because a webhook that never arrives otherwise means a paying customer
+ * whose key is refused and a support email as the only fix.
  *
- * Returns null when Lemon Squeezy does not recognise the key either — including when we
- * simply could not reach them, because a key we cannot confirm is not one to open the door
- * for.
+ * It went with Lemon Squeezy, and it is worth rebuilding for whatever replaces them. What
+ * it needs from a provider is one thing: an endpoint that answers "is this key real, and
+ * whose is it". Any provider that issues its own licence keys has one. Until then, a key
+ * we do not know is simply refused, and the gap has to be closed by hand from /admin.
  */
-export async function recoverLicense(rawKey: string): Promise<string | null> {
-  const { validateKey } = await import('@/lib/lemonsqueezy');
-  const { findOrCreateUser } = await import('@/lib/users');
-  const { grant } = await import('@/lib/entitlement');
-  const { getSettings } = await import('@/lib/settings');
-
-  const checked = await validateKey(normalizeKey(rawKey));
-  if (!checked.valid || !checked.email) return null;
-
-  const user = await findOrCreateUser({ email: checked.email });
-  const settings = await getSettings();
-
-  // Their expiry if they gave one; otherwise a month, which the next webhook corrects.
-  // Erring short is right: too little access is a complaint, too much is a giveaway.
-  const endsAt = checked.expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-  await grant({
-    userId: user.id,
-    source: 'LEMON',
-    endsAt,
-    dedupeKey: `lemon:recovered:${checked.externalId ?? hashKey(rawKey)}`,
-    note: 'Recovered from Lemon Squeezy after a missing webhook',
-  });
-
-  const license = await issueLicense({
-    key: rawKey,
-    userId: user.id,
-    source: 'LEMON',
-    externalId: checked.externalId,
-    subscriptionId: checked.subscriptionId,
-    activationLimit: settings.defaultDeviceLimit,
-    note: 'Recovered on first use',
-  });
-
-  console.warn(`[license] recovered ${checked.email} from Lemon Squeezy — a webhook was missed`);
-  return license.id;
-}
 
 export interface IssueInput {
   key: string;
   userId: string;
-  source: 'LEMON' | 'TRIAL' | 'ADMIN';
+  source: 'PURCHASE' | 'TRIAL' | 'ADMIN';
   externalId?: string | null;
   subscriptionId?: string | null;
   activationLimit?: number;

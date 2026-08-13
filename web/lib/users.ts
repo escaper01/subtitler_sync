@@ -3,10 +3,10 @@ import { db } from '@/lib/db';
 /**
  * Customer records.
  *
- * A `User` here is not somebody who logs in — nobody does. It is the person a licence
- * belongs to, created from the email that Lemon Squeezy reports at checkout or that the
- * trial form supplied. It exists so one person holding two keys is one customer, and so
- * the dashboard has something to show.
+ * A `User` is the person a licence belongs to. The row can be created by signing in with
+ * Google, or ahead of that from an email a purchase supplied — the address is the join, so
+ * the two paths converge on one row rather than making two. It exists so one person holding
+ * two keys is one customer, and so the dashboard has something to show.
  */
 
 export interface CustomerInput {

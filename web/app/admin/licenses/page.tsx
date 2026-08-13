@@ -8,9 +8,9 @@ export const dynamic = 'force-dynamic';
 /**
  * Every licence key.
  *
- * Bought keys arrive here through the Lemon Squeezy webhook; trials and hand-outs are made
- * here. The key itself is not shown — only its first characters — because we store a hash
- * and could not show it even if it were a good idea.
+ * Every key is currently issued from this page, since no payment provider is wired up to
+ * create them. The key itself is not shown — only its first characters — because we store a
+ * hash and could not show it even if it were a good idea.
  */
 export default async function LicensesPage() {
   const licenses = await db.license

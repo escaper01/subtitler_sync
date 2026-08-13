@@ -56,8 +56,9 @@ export async function POST(request: Request): Promise<Response> {
     note: note ? `${note} — by ${gate.email}` : `Issued by ${gate.email}`,
   });
 
-  // Our own keys are UUIDs, the same shape Lemon Squeezy issues, so the extension and the
-  // validator cannot tell the two apart and do not need to.
+  // UUID-shaped, which is what the common payment providers issue too — so a key we minted
+  // and a key one of them minted are indistinguishable to the extension and the validator,
+  // and neither needs to care which it is holding.
   const key = randomUUID();
   await issueLicense({
     key,

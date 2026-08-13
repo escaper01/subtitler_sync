@@ -50,17 +50,21 @@ place where neither typechecker is looking.
 ## The paywall, in one paragraph
 
 Subtitle **search** needs a subscription; loading your own `.srt` or `.vtt` stays free forever
-and touches none of that code. **The licence key is the whole credential** — there is no
-account and nothing to sign in to. Lemon Squeezy generates the key at checkout and emails it,
-the user pastes it into the extension's popup, and it travels as `X-Subtitler-Key` on every
+and touches none of that code. **The licence key is the whole credential to the extension** —
+it never signs in. The key is pasted into the popup and travels as `X-Subtitler-Key` on every
 request alongside `X-Subtitler-Install`, an anonymous per-install id the device limit counts.
 The server decides — on `search`, `release` **and** `download` — and the extension's UI only
 renders whatever answer came back. Nothing shipped inside the extension is trusted, because
 anything shipped inside it can be edited.
 
-**A key we do not recognise is checked with Lemon Squeezy before it is refused.** A webhook
-that never arrived would otherwise mean a paying customer whose key does not work and a
-support email; instead the first request repairs itself.
+Customers **do** have accounts on the website: Google sign-in, which is where the trial is
+granted and where the account page lives. That session never reaches the extension.
+
+**There is no payment provider.** Lemon Squeezy was removed after they declined the product,
+and nothing has replaced it — entitlements are granted by hand from `/admin` for now. What
+survived is the part worth keeping: the entitlement ledger, the keys, the device limit and the
+gate are all provider-agnostic, so a replacement is a webhook route and a checkout URL rather
+than a rewrite. `web/CLAUDE.md` sets out what one has to supply.
 
 **It is switched off until you turn it on.** `ENFORCE_ENTITLEMENT` defaults to false so an
 extension build that sends the header can reach users before the server starts requiring it.
@@ -70,9 +74,12 @@ server.
 ## Status
 
 Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click
-loading, the public site, the pricing page, licence keys through Lemon Squeezy, a 7-day trial
-emailed by Resend, the device limit, the admin dashboard (overview, reports, requests, users,
-licences, settings, API reference), and an admin-editable upgrade prompt on both surfaces.
+loading, the public site, the pricing page, customer accounts through Google sign-in with a
+7-day trial, licence keys, the device limit, device-signal matching to flag duplicate
+accounts, the admin dashboard (overview, reports, requests, users, licences, settings, API
+reference), and an admin-editable upgrade prompt on both surfaces.
+
+**Not working: taking money.** There is no payment provider — see the paragraph above.
 
 Prices, plan details, rate limits, the trial length and the default device limit are **rows in
 the database**, edited at `/admin/settings`. They were constants; a price in two places drifts,

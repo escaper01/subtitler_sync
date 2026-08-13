@@ -120,7 +120,7 @@ export function PlansForm({ initial }: { initial: PlanRow[] }) {
               <input
                 type="url"
                 value={plan.checkoutUrl}
-                placeholder="https://…lemonsqueezy.com/buy/…"
+                placeholder="https://…/buy/… (your payment provider's checkout link)"
                 onChange={(e) => patch(plan.slug, { checkoutUrl: e.target.value })}
                 className={field}
               />

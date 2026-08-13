@@ -1,6 +1,6 @@
 import { denied } from '@/lib/api';
 import { LIFETIME_ENDS_AT } from '@/lib/entitlement';
-import { activate, lookupLicense, recoverLicense } from '@/lib/license';
+import { activate, lookupLicense } from '@/lib/license';
 import { SITE_URL } from '@/lib/site';
 
 /**
@@ -64,14 +64,12 @@ function installOf(request: Request): string | null {
  */
 export async function requireEntitlement(request: Request): Promise<Gate> {
   const key = request.headers.get('x-subtitler-key');
-  let lookup = await lookupLicense(key);
+  const lookup = await lookupLicense(key);
 
-  // A key we do not know might still be a real purchase whose webhook never arrived. Ask
-  // Lemon Squeezy once; if they vouch for it, the rows are created and this retry finds
-  // them. Only for genuinely unknown keys — a revoked one stays revoked.
-  if (!lookup.ok && lookup.reason === 'unknown' && key) {
-    if (await recoverLicense(key)) lookup = await lookupLicense(key);
-  }
+  // A key we do not know used to be re-checked against the payment provider here, so that
+  // a purchase whose webhook never arrived repaired itself on first use. That went with
+  // Lemon Squeezy — see the note in lib/license.ts. Until a replacement provider is wired
+  // up, an unknown key is simply refused and has to be fixed by hand from /admin.
 
   if (!lookup.ok) {
     if (lookup.reason === 'missing') {

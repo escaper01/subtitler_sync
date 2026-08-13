@@ -129,9 +129,10 @@ export default function PrivacyPage() {
 
       <Section title="Paying">
         <p>
-          Payments are handled by Lemon Squeezy. This service never sees your card details —
-          what it receives is your email address, a subscription identifier, and the date
-          your access runs to.
+          There is currently no payment provider — subscriptions are arranged by hand. When one
+          is in place it will be named here, and it will be the party that handles your card
+          details: this service never sees them. What it receives is your email address, a
+          subscription identifier, and the date your access runs to.
         </p>
       </Section>
 

@@ -49,8 +49,10 @@ enum UserStatus {
 
 enum EntitlementSource {
   TRIAL
-  /// Bought through Lemon Squeezy.
-  LEMON
+  /// Bought. Deliberately not named after a payment provider — this outlived Lemon
+  /// Squeezy, and renaming an enum value that appears in historical rows is a migration
+  /// nobody should have to write twice.
+  PURCHASE
   /// Granted by hand from the dashboard.
   ADMIN
 }
@@ -87,8 +89,8 @@ model User {
   /// the sign-in path can decide without a second query on the row it just upserted.
   trialGrantedAt DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
   /// Bumped at most once a day by the token validator, never per request.
   lastSeenAt DateTime?
 
@@ -125,7 +127,7 @@ model Entitlement {
   /// Trial-once and webhook replay, both enforced by one unique index instead of
   /// hand-written checks:
   ///   trial:<emailHash>
-  ///   lemon:<subscriptionId>:<renewsAt>
+  ///   purchase:<subscriptionId>:<renewsAt>
   ///   admin:<cuid>
   dedupeKey String @unique
 
@@ -153,8 +155,9 @@ model TrialClaim {
 /* ------------------------------------------------------------------- licences */
 
 enum LicenseSource {
-  /// Bought through Lemon Squeezy, which generated the key and emailed it to the buyer.
-  LEMON
+  /// Bought. The key came from the payment provider, which generated it and gave it to
+  /// the buyer — as opposed to one we minted ourselves.
+  PURCHASE
   TRIAL
   /// Issued by hand from the dashboard.
   ADMIN
@@ -168,14 +171,15 @@ enum LicenseStatus {
 
 /// The thing a customer pastes into the extension.
 ///
-/// This is the credential — there is no sign-in, and no token of our own. For a purchase
-/// the key is Lemon Squeezy's; we only ever see it once, hash it, and recognise it again.
+/// This is the credential the extension carries — it never signs in, and there is no token
+/// of our own. A key may be one we minted or one a payment provider generated at checkout;
+/// either way we see it once, hash it, and recognise it again.
 ///
 /// Whether it *works* is a separate question from whether it exists: validity comes from
 /// the owner's `User.entitledUntil`, so a lapsed subscription leaves the key intact and
 /// simply stops opening the door. Renewing revives the same key.
 model License {
-  id String @id @default(cuid())
+  id      String @id @default(cuid())
   /// sha256 of the key. The buyer keeps the only copy; we never need to show it back.
   keyHash String @unique
   /// The first few characters, so a key can be recognised in the dashboard without
@@ -188,7 +192,8 @@ model License {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  /// Lemon Squeezy's own ids, so a renewal or cancellation can find this row again.
+  /// The payment provider's own ids, so a renewal or cancellation can find this row again.
+  /// Null on every key we issue ourselves.
   externalId     String? @unique
   subscriptionId String?
 
@@ -251,9 +256,11 @@ model Plan {
   currency   String       @default("USD")
   interval   PlanInterval
   /// How long one purchase grants. 7 for the trial, 30, 365.
-  days Int
+  days       Int
 
-  /// The Lemon Squeezy buy link. Empty for the trial, which is handled here.
+  /// The payment provider's buy link, set at /admin/settings. Empty for the trial, which is
+  /// handled here — and empty for everything else until a provider is wired up, which the
+  /// pricing page renders as "coming soon" rather than a button that goes nowhere.
   checkoutUrl String?
   blurb       String?
   visible     Boolean @default(true)
@@ -331,8 +338,8 @@ model SiteSetting {
   promptMessage String  @default("Subtitle search keeps a server running. A subscription is what pays for it.")
   /// Validated `^#[0-9a-fA-F]{6}$` on write — it ends up in inline styles in two codebases,
   /// one of which renders inside other people's pages.
-  promptColor String  @default("#38bdf8")
-  promptUrl   String?
+  promptColor   String  @default("#38bdf8")
+  promptUrl     String?
 
   /// Request limits, per licence. Tighten these when somebody is hammering the API; they
   /// take effect within a minute rather than at the next deploy.
@@ -380,9 +387,9 @@ model Submission {
   /// Filled in automatically when the report comes from the extension.
   extensionVersion String?
   /// The site they were on. Sensitive enough to be worth stating plainly in the UI.
-  siteDomain String?
+  siteDomain       String?
   /// Anonymous per-install id, so repeated reports from one person can be recognised.
-  installId String?
+  installId        String?
 
   /// Admin's own notes, never shown to the submitter.
   note String?
@@ -426,7 +433,7 @@ model DeviceSignal {
   platform  String?
   languages String?
   /// Salted SHA-256 of the caller's IP, using the same salt as the rest of the app.
-  ipHash String?
+  ipHash    String?
 
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @updatedAt

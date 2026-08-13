@@ -47,9 +47,8 @@ overrides.
   ID → Web application. The authorised redirect URI must be exactly
   `<NEXTAUTH_URL>/api/auth/callback/google`. Until these are set, `/admin` cannot be signed
   into; everything else runs.
-- **`LEMONSQUEEZY_*`** — the shop. The webhook secret is what makes deliveries trustworthy;
-  the API key is only used to rescue a licence a webhook lost. Search and `/admin` both work
-  without them, so leave them empty until you are actually taking money.
+- **No payment provider.** Lemon Squeezy was removed and nothing has replaced it; there is
+  nothing to configure here. Entitlements are granted by hand from `/admin` in the meantime.
 - **`RESEND_API_KEY` / `EMAIL_FROM`** — sends trial keys. Without them the trial form fails
   loudly and rolls the claim back rather than burning somebody's only trial.
 
@@ -174,9 +173,11 @@ devices take the same last seat, because under READ COMMITTED neither sees the o
 uncommitted row and the unique index on `(licenseId, installId)` has nothing to fire on when
 the install ids differ. It only catches a device racing itself. There is a test for it.
 
-`recoverLicense()` is the missed-webhook path: a key we do not know is checked against Lemon
-Squeezy once, and if they vouch for it the rows are created on the spot. Without it a lost
-delivery is a paying customer who cannot use what they bought.
+`recoverLicense()` **used to be here** and is worth rebuilding. A key we had no record of was
+checked against the provider once, and if they vouched for it the rows were created on the
+spot; without it a lost webhook is a paying customer who cannot use what they bought, fixable
+only by hand from `/admin`. It went with Lemon Squeezy — the file keeps a note where it was,
+saying what a replacement needs.
 
 **`lib/gate.ts` — the enforcement.** `requireEntitlement` runs on `search`, `release` **and**
 `download`. All three: a release path is a shareable string, so gating only search leaves the
@@ -188,13 +189,29 @@ whose URL is server-owned — it can change without an extension update going th
 `X-Subtitler-Key` must reach users before the server *requires* it; enforcing first breaks
 search for everyone already installed, with no server-side way to undo it.
 
-**`lib/lemonsqueezy.ts` and the webhook — taking money.** Deliveries are signed **HMAC-SHA256
-over the raw body**: read `request.text()` once and verify against those bytes, never against
-a re-serialised object. The route answers 401 for a bad signature, 400 for an unparseable
-body, 200 for events it ignores, and 500 *only* when our database failed — because Lemon
-Squeezy retries anything that is not 2xx, and a retry only helps in that last case. A
-cancelled subscription is **not** revoked; `ends_at` becomes the end of what was paid for and
-access lapses on its own.
+**Taking money — nothing does, currently.** Lemon Squeezy was removed after they declined the
+product, and no provider has replaced it. `EntitlementSource.PURCHASE` and
+`LicenseSource.PURCHASE` are what remain: deliberately not named after a processor, because
+the last name outlived its provider by exactly one migration.
+
+Everything else in the model survived that removal untouched — the ledger, the licence keys,
+the device limit, the gate. That is the seam a replacement plugs into, and it needs three
+things:
+
+- a **webhook route** that verifies the signature over the **raw body** — read
+  `request.text()` once and verify against those bytes, never a re-serialised object, which
+  fails only *intermittently* and so is far worse than failing outright. Answer 401 for a bad
+  signature, 400 for an unparseable body, 200 for events you ignore, and 500 **only** when the
+  database failed: providers retry anything that is not 2xx, and a retry helps in that case
+  alone.
+- a **key-validation call**, to rebuild the missed-webhook recovery path — see the note left
+  in `lib/license.ts` where it used to be. Without it a lost delivery is a paying customer
+  whose key is refused, fixable only by hand.
+- **`grant()` with the provider's event id as the `dedupeKey`**, which is what makes a
+  replayed delivery harmless.
+
+A cancelled subscription must **not** be revoked: let the paid-for period run out and access
+lapses on its own. Revocation is for chargebacks.
 
 **`lib/settings.ts` — the levers.** Rate limits, the trial length and the default device limit
 are rows, not constants, cached for 60 seconds so the settings row is not read on every

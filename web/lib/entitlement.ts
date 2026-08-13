@@ -78,8 +78,8 @@ export interface GrantInput {
   /**
    * An exact end date, when the source already knows it.
    *
-   * Lemon Squeezy owns the subscription clock and tells us `renews_at`, so copying that is
-   * faithful where adding 30 days would drift a little further every month.
+   * A payment provider owns the subscription clock and states when the period ends, so
+   * copying that is faithful where adding 30 days would drift a little further every month.
    *
    * Note this does **not** stack: an explicit end replaces the window rather than
    * extending it, because the provider is stating the whole truth, not adding to it.
