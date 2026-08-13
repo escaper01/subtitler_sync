@@ -18,7 +18,7 @@ export const metadata: Metadata = {
  * The date below is shown to users, so update it when the substance changes.
  */
 
-const UPDATED = '10 August 2026';
+const UPDATED = '11 August 2026';
 
 export default function PrivacyPage() {
   return (
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
         the title you typed, because that is the only way to look it up.
       </p>
 
-      <Section title="If you never buy anything">
+      <Section title="If you never sign in">
         <p>
           Nothing about you is stored. The extension keeps your subtitle files, styling, timing
           adjustments and site list <strong>on your own machine</strong>, in the browser&rsquo;s
@@ -44,19 +44,48 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="If you subscribe or take a trial">
+      <Section title="If you make an account">
         <p>
-          There is no account and no password — <strong>you never sign in</strong>. You get a
-          licence key, paste it into the extension, and that is the whole arrangement.
+          Accounts are created by signing in with Google, on this website. There is no password —
+          we never see one. From Google we receive your email address, your name and your profile
+          picture, and nothing else.
         </p>
-        <p>What is stored against that key:</p>
+        <p>What is stored against that account:</p>
         <List
           items={[
-            'Your email address — where the key was sent, and the only way to reach you about it.',
-            'The key itself, as a one-way hash. The copy you were emailed is the only usable one.',
-            'Which installations of the extension are using it, so the device limit can be enforced.',
+            'Your email address, name and profile picture, as Google reports them.',
+            'When your subscription runs to, and the record of each period that was granted.',
+            'Your licence keys, as one-way hashes. The copy you were given is the only usable one.',
+            'Which installations of the extension are using each key, so the device limit can be enforced.',
           ]}
         />
+        <p>
+          The extension itself still <strong>does not sign in</strong>. It sends only your licence
+          key, so nothing you do while watching is tied to your Google identity.
+        </p>
+      </Section>
+
+      <Section title="Your device, when you sign in">
+        <p>
+          When you sign in <strong>on this website</strong>, we record characteristics of the
+          browser you signed in with: a fingerprint calculated by an open-source library, along
+          with your time zone, screen size, platform and language settings. Your IP address is
+          used to derive a one-way hash and is not itself stored.
+        </p>
+        <p>
+          This is used for one purpose — noticing when several accounts belong to the same person,
+          which is how free trials get farmed. It is not used for advertising, it is never shared,
+          and it is never sold.
+        </p>
+        <p>
+          The fingerprint is stored as a one-way hash, so accounts can be compared with each other
+          but the record cannot be matched against a fingerprint collected anywhere else. Nothing
+          is decided automatically by it: a match is only ever flagged for a person to look at.
+        </p>
+        <p>
+          This happens on this website only. <strong>The extension never does this</strong> — not
+          on any site you watch, not ever.
+        </p>
       </Section>
 
       <Section title="When you search for subtitles">
@@ -138,6 +167,9 @@ export default function PrivacyPage() {
             report form
           </Link>{' '}
           and include the email address you signed in with.
+        </p>
+        <p>
+          Deleting your account removes its device records along with it.
         </p>
         <p>
           You can also remove the key from the extension at any time, from its popup, which

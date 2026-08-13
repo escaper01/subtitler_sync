@@ -24,8 +24,13 @@ const ADMINS = [{ email: 'assaoui54@gmail.com', name: 'Osama' }];
  * Starting prices. Change them in the dashboard, not here — this only seeds an empty
  * database, and re-running the seed deliberately leaves existing rows alone.
  *
- * `checkoutUrl` is blank until the Lemon Squeezy products exist; the pricing page shows
- * such a plan as "coming soon" rather than a button that goes nowhere.
+ * `checkoutUrl` is blank until the products exist; the pricing page shows such a plan as
+ * "coming soon" rather than a button that goes nowhere.
+ *
+ * Note what this does *not* do on a database that already has plans: the monthly plan was
+ * replaced by a six-month one here, but `update: {}` means re-seeding will not remove the
+ * old `monthly` row, and it stays visible on the pricing page. Hide it at /admin/settings —
+ * hiding rather than deleting, so anyone already on that plan keeps a plan that exists.
  */
 const PLANS = [
   {
@@ -38,21 +43,21 @@ const PLANS = [
     sortOrder: 0,
   },
   {
-    slug: 'monthly',
-    name: 'Monthly',
-    priceCents: 200,
-    interval: 'MONTH',
-    days: 30,
-    blurb: 'Unlimited subtitle search. Cancel whenever you like.',
+    slug: 'six-month',
+    name: '6 months',
+    priceCents: 1200,
+    interval: 'SIX_MONTH',
+    days: 182,
+    blurb: 'Half a year of subtitle search.',
     sortOrder: 1,
   },
   {
     slug: 'yearly',
     name: 'Yearly',
-    priceCents: 1900,
+    priceCents: 2000,
     interval: 'YEAR',
     days: 365,
-    blurb: 'The same thing, about two months free.',
+    blurb: 'A full year, cheaper than two half-years.',
     sortOrder: 2,
   },
 ];

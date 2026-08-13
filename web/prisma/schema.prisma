@@ -55,16 +55,20 @@ enum EntitlementSource {
   ADMIN
 }
 
-/// Somebody who has a licence key.
+/// A customer account.
 ///
-/// **There is no sign-in.** A user row is created when someone buys or takes a trial, from
-/// the email the payment or the trial form supplied. It exists so one person with two keys
-/// is one customer, and so `/admin/users` has something to show — not for authentication.
+/// Created by signing in with Google, and keyed on the verified address — which is also
+/// how a row created by an earlier purchase is reattached to the person who later signs
+/// in, rather than duplicated.
 ///
-/// Distinct from `Admin`, which is about the dashboard and is the only thing that logs in.
+/// Holding an account is not the same as having access: that is `entitledUntil`, computed
+/// from the entitlement ledger. A signed-in user with no subscription is a normal state.
+///
+/// Distinct from `Admin`, which governs the dashboard only. The two tables are unrelated
+/// on purpose — being a customer must never imply anything about `/admin`.
 model User {
   id     String     @id @default(cuid())
-  /// Lowercased on write. From Lemon Squeezy at purchase, or the trial form.
+  /// Lowercased on write, in every path that creates one.
   email  String     @unique
   name   String?
   image  String?
@@ -88,9 +92,10 @@ model User {
   /// Bumped at most once a day by the token validator, never per request.
   lastSeenAt DateTime?
 
-  entitlements Entitlement[]
-  licenses     License[]
-  searches     SearchLog[]
+  entitlements  Entitlement[]
+  licenses      License[]
+  searches      SearchLog[]
+  deviceSignals DeviceSignal[]
 
   /// "Who is entitled / expiring this week", and the reconcile sweep.
   @@index([entitledUntil])
@@ -225,6 +230,9 @@ model LicenseActivation {
 enum PlanInterval {
   TRIAL
   MONTH
+  /// Half a year. `days` is 182, not 183 — half of 365 rounded down, so the customer is
+  /// never charged a day early.
+  SIX_MONTH
   YEAR
 }
 
@@ -385,4 +393,47 @@ model Submission {
   // The queue is read newest-first and filtered by status; both are covered here.
   @@index([status, createdAt])
   @@index([kind, createdAt])
+}
+
+/// A device seen signing in to an account.
+///
+/// Exists to answer one question: are these two accounts the same person? Someone farming
+/// free trials signs up repeatedly from one machine, and nothing else in the schema would
+/// show it — `TrialClaim` stops a second trial on the *same address*, not a second address.
+///
+/// **Stores a hash, not a fingerprint.** `visitorHash` is FingerprintJS's visitor id run
+/// through the same salted SHA-256 used elsewhere. Matching still works, because equal
+/// inputs hash equally — but the table is not itself a device-tracking database, and it
+/// cannot be joined against one obtained anywhere else. The coarse columns beside it exist
+/// so a human reviewing a suspected duplicate has something legible to judge, rather than
+/// two opaque hashes that happen to match.
+///
+/// Only written when someone signs in to the web app. The extension never reports here:
+/// it has no session, and its per-install id already serves the device-limit purpose.
+model DeviceSignal {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Salted SHA-256 of the FingerprintJS visitor id. See lib/deviceSignal.ts.
+  visitorHash String
+
+  /// Coarse, human-readable context for an admin reviewing a match. Deliberately not the
+  /// full component set — the hash already carries the discriminating power, and storing
+  /// the raw font list would make this a fingerprint database rather than a lookup key.
+  timezone  String?
+  screen    String?
+  platform  String?
+  languages String?
+  /// Salted SHA-256 of the caller's IP, using the same salt as the rest of the app.
+  ipHash String?
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  /// One row per (account, device). Re-signing in updates `lastSeenAt` instead of growing
+  /// the table without bound.
+  @@unique([userId, visitorHash])
+  /// The query this table exists for: which accounts share a device.
+  @@index([visitorHash])
 }

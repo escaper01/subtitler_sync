@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 import { LIFETIME_ENDS_AT } from '@/lib/entitlement';
 import { Access } from '@/app/admin/users/Access';
 import { UserActions } from '@/app/admin/users/[id]/UserActions';
+import { SharedDevices } from '@/app/admin/users/[id]/SharedDevices';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,6 +103,8 @@ export default async function UserPage({ params }: { params: Promise<{ id: strin
           <UserActions userId={user.id} banned={user.status === 'BANNED'} />
         </div>
       </section>
+
+      <SharedDevices userId={user.id} />
 
       <section className="mt-10">
         <h2 className="font-display text-lg font-bold tracking-tight">Subscription history</h2>
