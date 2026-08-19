@@ -13,7 +13,22 @@ export default function ApiDocPage() {
     <main className="mx-auto max-w-3xl px-6 py-10">
       <h1 className="font-display text-2xl font-bold tracking-tight">API</h1>
       <p className="mt-2 text-sm text-muted">
-        What the extension calls. All three are GET, CORS-open, and currently unauthenticated.
+        What the extension calls. All GET, CORS-open, and unauthenticated — there is no
+        credential to send since the paywall was removed.
+      </p>
+      <p className="mt-3 rounded-xl border border-line bg-surface-2 px-4 py-3 text-sm leading-relaxed text-muted">
+        <strong className="text-text">Rate limits are the only guard.</strong> Every request
+        is counted against the caller&rsquo;s{' '}
+        <code className="font-mono text-xs">X-Subtitler-Install</code> header and a hash of
+        their IP address, with the address bucket set five times looser because one address
+        is often a whole household. A request with no install header is not waved through —
+        it lands in a single shared <code className="font-mono text-xs">anonymous</code>{' '}
+        bucket. Search and the two fetch endpoints have separate allowances, so loading a
+        subtitle does not spend a search. Tune both at{' '}
+        <a href="/admin/settings" className="text-accent hover:underline">
+          Settings
+        </a>
+        .
       </p>
 
       <Endpoint
@@ -44,6 +59,17 @@ export default function ApiDocPage() {
         notes={[
           'Relayed rather than redirected, so the upstream URL never reaches the client.',
           'Anything without a timestamp arrow is rejected as not a subtitle.',
+        ]}
+      />
+
+      <Endpoint
+        method="GET"
+        path="/api/donate"
+        summary="The donation prompt and its buttons. Takes no parameters and never refuses."
+        notes={[
+          'Answers everyone identically — there are no subscribers to exempt.',
+          'Every string is admin-supplied and rendered by the extension inside other people’s pages, so URLs are http/https only and the colour is validated as #rrggbb.',
+          'The only call the search-free build ever makes.',
         ]}
       />
 

@@ -1,6 +1,6 @@
-import { fail, fromError, parsePath, preflight, withCors } from '@/lib/api';
+import { denied, fail, fromError, parsePath, preflight, withCors } from '@/lib/api';
+import { checkFetchLimits } from '@/lib/rateLimit';
 import { downloadSubtitle } from '@/lib/subtitlecat';
-import { enforcing, requireEntitlement } from '@/lib/gate';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,20 +10,21 @@ export const dynamic = 'force-dynamic';
  *
  * Relays the subtitle text.
  *
- * Relaying rather than redirecting is deliberate: the upstream URL never reaches the
- * client, so when this endpoint starts checking a licence key there is no link to copy
- * around it. It also means the extension needs no host permission for subtitlecat, and
- * encoding of the site's space-bearing filenames is handled once, here.
+ * Relaying rather than redirecting is still deliberate, even with nothing to protect: the
+ * upstream URL never reaches the client, so the extension needs no host permission for
+ * subtitlecat, and the encoding of the site's space-bearing filenames is handled once,
+ * here.
+ *
+ * This is where the bytes actually leave, so it carries the same counter as `/api/release`
+ * — a client that skipped search entirely is still metered.
  */
 export async function GET(request: Request): Promise<Response> {
   const path = parsePath(new URL(request.url).searchParams.get('path'));
   if (!path) return fail('Which subtitle?', 400);
 
-  // The one that matters most: this is where the bytes actually leave. A client that
-  // skipped search entirely must still be refused here.
-  if (enforcing()) {
-    const gate = await requireEntitlement(request);
-    if (!gate.ok) return gate.response;
+  const limit = await checkFetchLimits(request);
+  if (!limit.allowed) {
+    return denied('rate_limited', 'Slow down a moment.', 429, undefined, limit.retryAfter);
   }
 
   try {

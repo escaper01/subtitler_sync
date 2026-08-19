@@ -4,35 +4,31 @@ import { db } from '@/lib/db';
  * The operator-tunable numbers.
  *
  * These were constants in the code. They moved because each one is something you need to
- * change in response to an event — abuse, cost, a promotion — and waiting for a deploy is
- * the wrong shape for that.
+ * change in response to an event — abuse, cost, a new donation page — and waiting for a
+ * deploy is the wrong shape for that.
  *
- * Cached for a minute, because the gate reads them on every request and a settings row
- * that changes twice a week does not need a query each time. A minute is short enough that
- * "I tightened the limit and nothing happened" never becomes a real thought.
+ * Cached for a minute, because the rate limiter reads them on every search and a settings
+ * row that changes twice a week does not need a query each time. A minute is short enough
+ * that "I tightened the limit and nothing happened" never becomes a real thought.
  */
 
 export interface Settings {
-  promptEnabled: boolean;
-  promptMessage: string;
-  promptColor: string;
-  promptUrl: string | null;
+  donateEnabled: boolean;
+  donateHeading: string;
+  donateMessage: string;
+  donateColor: string;
   searchPerHour: number;
   searchPerDay: number;
-  defaultDeviceLimit: number;
-  trialDays: number;
 }
 
 /** Used when the row is missing or the database is unreachable. */
 export const DEFAULT_SETTINGS: Settings = {
-  promptEnabled: false,
-  promptMessage: '',
-  promptColor: '#38bdf8',
-  promptUrl: null,
+  donateEnabled: false,
+  donateHeading: 'Support the extension',
+  donateMessage: '',
+  donateColor: '#38bdf8',
   searchPerHour: 60,
   searchPerDay: 300,
-  defaultDeviceLimit: 2,
-  trialDays: 7,
 };
 
 const TTL_MS = 60_000;
@@ -46,14 +42,12 @@ export async function getSettings(): Promise<Settings> {
     const row = await db.siteSetting.findUnique({ where: { id: 'singleton' } });
     const value: Settings = row
       ? {
-          promptEnabled: row.promptEnabled,
-          promptMessage: row.promptMessage,
-          promptColor: row.promptColor,
-          promptUrl: row.promptUrl,
+          donateEnabled: row.donateEnabled,
+          donateHeading: row.donateHeading,
+          donateMessage: row.donateMessage,
+          donateColor: row.donateColor,
           searchPerHour: row.searchPerHour,
           searchPerDay: row.searchPerDay,
-          defaultDeviceLimit: row.defaultDeviceLimit,
-          trialDays: row.trialDays,
         }
       : DEFAULT_SETTINGS;
 
@@ -61,7 +55,8 @@ export async function getSettings(): Promise<Settings> {
     return value;
   } catch {
     // Never fail a request over a settings read. Falling back to the defaults means the
-    // limits still apply during a database blip rather than disappearing.
+    // limits still apply during a database blip rather than disappearing — which matters
+    // more now that they are the only guard on the search API.
     return cached?.value ?? DEFAULT_SETTINGS;
   }
 }

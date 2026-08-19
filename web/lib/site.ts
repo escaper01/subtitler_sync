@@ -9,8 +9,6 @@
 export const STORE_URL =
   process.env.NEXT_PUBLIC_STORE_URL ?? 'https://chromewebstore.google.com/';
 
-export const DONATE_URL = process.env.NEXT_PUBLIC_DONATE_URL ?? '';
-
 /**
  * This site's own origin, used to build absolute links the *extension* will open — it has
  * no relative path to resolve against, so these cannot be relative.

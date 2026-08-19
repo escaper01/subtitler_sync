@@ -11,14 +11,19 @@ export const metadata: Metadata = {
  * The privacy policy.
  *
  * **Keep this true.** It is written from what the code actually does — `lib/searchLog.ts`,
- * `app/api/feedback/route.ts` and `prisma/schema.prisma` are the sources. If you change
- * what is stored, change this page in the same commit; a policy that overstates or
- * understates is worse than none, and the Chrome Web Store listing points here.
+ * `lib/callerId.ts`, `app/api/feedback/route.ts` and `prisma/schema.prisma` are the
+ * sources. If you change what is stored, change this page in the same commit; a policy
+ * that overstates or understates is worse than none, and the Chrome Web Store listing
+ * points here.
+ *
+ * It got substantially shorter when the paywall was removed. Gone with it: accounts,
+ * Google sign-in for customers, licence keys, device fingerprints, trial records and
+ * anything about payment. Do not reintroduce a sentence here without the code to match.
  *
  * The date below is shown to users, so update it when the substance changes.
  */
 
-const UPDATED = '11 August 2026';
+const UPDATED = '20 August 2026';
 
 export default function PrivacyPage() {
   return (
@@ -28,15 +33,21 @@ export default function PrivacyPage() {
         What this stores, and why
       </h1>
       <p className="mt-4 text-pretty text-lg leading-relaxed text-muted">
-        Short version: subtitles you load yourself never leave your browser. Searching sends
-        the title you typed, because that is the only way to look it up.
+        Short version: there is no account, nothing to sign in to, and subtitles you load
+        yourself never leave your browser. Searching sends the title you typed, because that
+        is the only way to look it up.
       </p>
 
-      <Section title="If you never sign in">
+      <Section title="There is no account">
         <p>
-          Nothing about you is stored. The extension keeps your subtitle files, styling, timing
-          adjustments and site list <strong>on your own machine</strong>, in the browser&rsquo;s
-          extension storage. None of that is uploaded, and there is no account to attach it to.
+          The extension does not sign in to anything and holds no credential. There is no
+          registration, no password, no licence key and no subscription — every feature is
+          free, so there is nothing for an account to unlock and no customer record to keep.
+        </p>
+        <p>
+          Your subtitle files, styling, timing adjustments and site list are kept{' '}
+          <strong>on your own machine</strong>, in the browser&rsquo;s extension storage. None
+          of it is uploaded, and there is nothing to attach it to.
         </p>
         <p>
           The extension runs only on sites you have added to its list. On every other page it
@@ -44,74 +55,34 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="If you make an account">
-        <p>
-          Accounts are created by signing in with Google, on this website. There is no password —
-          we never see one. From Google we receive your email address, your name and your profile
-          picture, and nothing else.
-        </p>
-        <p>What is stored against that account:</p>
-        <List
-          items={[
-            'Your email address, name and profile picture, as Google reports them.',
-            'When your subscription runs to, and the record of each period that was granted.',
-            'Your licence keys, as one-way hashes. The copy you were given is the only usable one.',
-            'Which installations of the extension are using each key, so the device limit can be enforced.',
-          ]}
-        />
-        <p>
-          The extension itself still <strong>does not sign in</strong>. It sends only your licence
-          key, so nothing you do while watching is tied to your Google identity.
-        </p>
-      </Section>
-
-      <Section title="Your device, when you sign in">
-        <p>
-          When you sign in <strong>on this website</strong>, we record characteristics of the
-          browser you signed in with: a fingerprint calculated by an open-source library, along
-          with your time zone, screen size, platform and language settings. Your IP address is
-          used to derive a one-way hash and is not itself stored.
-        </p>
-        <p>
-          This is used for one purpose — noticing when several accounts belong to the same person,
-          which is how free trials get farmed. It is not used for advertising, it is never shared,
-          and it is never sold.
-        </p>
-        <p>
-          The fingerprint is stored as a one-way hash, so accounts can be compared with each other
-          but the record cannot be matched against a fingerprint collected anywhere else. Nothing
-          is decided automatically by it: a match is only ever flagged for a person to look at.
-        </p>
-        <p>
-          This happens on this website only. <strong>The extension never does this</strong> — not
-          on any site you watch, not ever.
-        </p>
-      </Section>
-
       <Section title="When you search for subtitles">
-        <p>Each search records:</p>
+        <p>Searching is the one thing that leaves your browser. Each search records:</p>
         <List
           items={[
             'The title you typed, the language you chose, and which page of results.',
             'Whether it succeeded, and how many results came back.',
             'A one-way hash of your IP address — not the address itself.',
-            'An anonymous per-installation identifier.',
+            'An anonymous per-installation identifier, generated in your browser.',
           ]}
         />
         <p>
-          This exists to fix things that fail to find results, and to notice one account being
-          shared by a crowd.
+          This exists for two reasons: to fix searches that fail to find anything, and to stop
+          the service being used as somebody&rsquo;s free scraping backend. With no accounts,
+          the installation identifier and the hashed address are the only way to tell one
+          caller from another, so they are also what the rate limits are counted against.
         </p>
         <p className="rounded-xl border border-line bg-surface-2 px-4 py-3">
           <strong>Be aware:</strong> a search history is a record of what you have been
-          watching, and it is kept against your licence indefinitely. If that bothers you,
-          you can ask for it to be deleted — see below — or use the extension without a key
-          at all and load your own subtitle files, which records nothing.
+          watching. It is not linked to a name or an email address — there are none — but it is
+          linked to an identifier that stays the same for as long as the extension is
+          installed. If that bothers you, load your own subtitle files instead: that path
+          records nothing at all.
         </p>
         <p>
           Searches are passed to <span className="font-mono text-sm">subtitlecat.com</span>,
-          which is where the subtitles come from. Only the title and language go there; your
-          identity does not. Their handling of that request is theirs, not ours.
+          which is where the subtitles come from. Only the title and language go there; the
+          identifier and the address hash do not. Their handling of that request is theirs,
+          not ours.
         </p>
       </Section>
 
@@ -123,32 +94,39 @@ export default function PrivacyPage() {
         <p>
           The one exception is deliberate and visible: if you send a bug report or a feature
           request, the form may include the site you were on and the extension version, because
-          without them most reports cannot be acted on. That is a form you chose to submit.
+          without them most reports cannot be acted on. That is a form you chose to submit, and
+          it shows you what it is sending.
         </p>
       </Section>
 
-      <Section title="Paying">
+      <Section title="Donations">
         <p>
-          There is currently no payment provider — subscriptions are arranged by hand. When one
-          is in place it will be named here, and it will be the party that handles your card
-          details: this service never sees them. What it receives is your email address, a
-          subscription identifier, and the date your access runs to.
+          The donate buttons are ordinary links to services such as PayPal or Ko-fi. Following
+          one takes you to them, and anything that happens after that is between you and them —
+          this service is not told who donated, receives no payment details, and has no way to
+          connect a donation to anything on this page.
+        </p>
+      </Section>
+
+      <Section title="Signing in">
+        <p>
+          The only sign-in here is the administrator&rsquo;s, for the dashboard that reads bug
+          reports. It is restricted to a fixed list of addresses. If you are not running this
+          service, it does not involve you.
         </p>
       </Section>
 
       <Section title="How long any of it is kept">
         <List
           items={[
-            'Your email, licence and subscription history: until you ask for it to be deleted.',
             'Search history: indefinitely, unless you ask for it to be deleted.',
             'Bug reports and feature requests: indefinitely, so the same issue is not investigated twice.',
             'Rate-limiting counters: hours to a day, then discarded automatically.',
           ]}
         />
         <p>
-          One thing survives deletion by design: a one-way hash recording that an
-          address has already used its free trial. It cannot be reversed into your email, and
-          exists only so the trial cannot be taken repeatedly.
+          Nothing survives a deletion request. The one-way hash that used to record a spent
+          free trial is gone along with trials themselves.
         </p>
       </Section>
 
@@ -160,21 +138,20 @@ export default function PrivacyPage() {
         </p>
       </Section>
 
-      <Section title="Getting your data, or getting rid of it">
+      <Section title="Getting rid of it">
         <p>
-          Ask, and it will be done: a copy of what is stored about you, or deletion of your
-          record and its history. Use the{' '}
+          Ask, and it will be done. Use the{' '}
           <Link href="/report" className="text-accent hover:underline">
             report form
           </Link>{' '}
-          and include the email address you signed in with.
+          from inside the extension, which attaches your installation identifier
+          automatically. That identifier is the only thing tying any record to you, so a
+          request sent without it cannot be matched to anything.
         </p>
         <p>
-          Deleting your account removes its device records along with it.
-        </p>
-        <p>
-          You can also remove the key from the extension at any time, from its popup, which
-          deletes it from your browser immediately.
+          You can also cut the link yourself at any time by removing and reinstalling the
+          extension, which generates a new identifier. That does not delete what was already
+          recorded, but nothing recorded afterwards can be connected to it.
         </p>
       </Section>
 

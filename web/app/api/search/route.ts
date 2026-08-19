@@ -1,7 +1,6 @@
 import { denied, fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
-import { checkLimit, searchLimits } from '@/lib/rateLimit';
+import { checkSearchLimits } from '@/lib/rateLimit';
 import { searchExpanded } from '@/lib/subtitlecat';
-import { enforcing, optionalViewer, requireEntitlement, type Viewer } from '@/lib/gate';
 import { logSearch } from '@/lib/searchLog';
 
 // cheerio needs Node built-ins, and the TTL cache wants a reused instance.
@@ -13,6 +12,11 @@ export const dynamic = 'force-dynamic';
  *
  * One page of releases, each already expanded into its subtitle in `lang` — so the usual
  * case needs no second request.
+ *
+ * **Open, and rate-limited rather than authenticated.** The licence gate that used to run
+ * here is gone with the paywall. What replaces it is a counter keyed on the extension's
+ * install id and the caller's hashed address, which is enough to stop this being used as
+ * somebody's free scraping backend and is not meant to be more than that.
  */
 export async function GET(request: Request): Promise<Response> {
   const params = new URL(request.url).searchParams;
@@ -27,40 +31,22 @@ export async function GET(request: Request): Promise<Response> {
 
   const page = parsePage(params.get('page'));
 
-  // The gate runs before any upstream work — a refused search must cost subtitlecat
-  // nothing. While ENFORCE_ENTITLEMENT is off we still resolve the caller, so the log and
-  // the dashboard are already truthful before the rollout flips it on.
-  let viewer: Viewer | null;
-  if (enforcing()) {
-    const gate = await requireEntitlement(request);
-    if (!gate.ok) {
-      logSearch({ userId: null, query, language, page, outcome: 'DENIED', request });
-      return gate.response;
-    }
-    viewer = gate.viewer;
-
-    // Per licence, not per user: a customer with two keys bought two.
-    for (const limit of await searchLimits()) {
-      const check = await checkLimit({ ...limit, subject: gate.viewer.licenseId });
-      if (!check.allowed) {
-        logSearch({ userId: viewer.userId, query, language, page, outcome: 'DENIED', request });
-        return denied(
-          'rate_limited',
-          'That is a lot of searching. Try again shortly.',
-          429,
-          undefined,
-          check.retryAfter,
-        );
-      }
-    }
-  } else {
-    viewer = await optionalViewer(request);
+  // Before any upstream work: a refused search must cost subtitlecat nothing.
+  const limit = await checkSearchLimits(request);
+  if (!limit.allowed) {
+    logSearch({ query, language, page, outcome: 'DENIED', request });
+    return denied(
+      'rate_limited',
+      'That is a lot of searching. Try again shortly.',
+      429,
+      undefined,
+      limit.retryAfter,
+    );
   }
 
   try {
     const result = await searchExpanded(query, language, page);
     logSearch({
-      userId: viewer?.userId ?? null,
       query,
       language,
       page,
@@ -70,14 +56,7 @@ export async function GET(request: Request): Promise<Response> {
     });
     return json(result);
   } catch (err) {
-    logSearch({
-      userId: viewer?.userId ?? null,
-      query,
-      language,
-      page,
-      outcome: 'UPSTREAM_ERROR',
-      request,
-    });
+    logSearch({ query, language, page, outcome: 'UPSTREAM_ERROR', request });
     return fromError(err);
   }
 }

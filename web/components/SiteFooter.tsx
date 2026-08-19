@@ -27,8 +27,8 @@ export function SiteFooter() {
               </a>
             </li>
             <li>
-              <Link href="/pricing" className="text-muted transition-colors hover:text-accent">
-                Pricing
+              <Link href="/donate" className="text-muted transition-colors hover:text-accent">
+                Donate
               </Link>
             </li>
             <li>

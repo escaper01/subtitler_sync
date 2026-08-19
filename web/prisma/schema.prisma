@@ -1,19 +1,18 @@
-// Accounts, entitlements, submissions and settings.
+// Submissions, settings, donations and telemetry.
 //
-// Two conventions run through this file and are worth reading before changing anything.
+// **There are no accounts here, and no money.** There was: an append-only entitlement
+// ledger, licence keys, device activations, trials and plans. All of it was removed when
+// the product stopped charging — subtitle search is free, and the extension carries no
+// credential at all. What is left is the dashboard's own sign-in (`Admin`), the things
+// people send us (`Submission`), the levers (`SiteSetting`, `DonationLink`) and enough
+// telemetry to see abuse coming (`SearchLog`, `RateLimit`).
 //
-// **Entitlement is an append-only ledger with one denormalised cache.** `Entitlement` rows
-// are the truth and are never edited or deleted; `User.entitledUntil` is a copy of
-// max(endsAt) that exactly one function writes (lib/entitlement.ts#recompute), always in
-// the same transaction as the row that changed it. Every paid request reads that one
-// column, so the hot path is a single indexed lookup that returns identity and access
-// together — not a fold over a ledger.
-//
-// **There is deliberately no NextAuth PrismaAdapter**, and no Account/Session/
-// VerificationToken tables. One provider, no account linking, and the session strategy
-// stays `jwt`. The adapter would add three tables and a strategy migration to buy nothing;
-// the `User` row is upserted by hand in the signIn callback instead. "We added users, so
-// we need the adapter" is the reflex — this is the reason not to.
+// One consequence is worth stating where it will be read. **Nothing authenticates the
+// search API any more.** The only thing standing in front of `/api/search`, `/api/release`
+// and `/api/download` is the rate limiter below, keyed on the extension's anonymous
+// install id and a hashed IP. That is why `SearchLog.installId` and `RateLimit` survived a
+// removal that took everything around them: they stopped being analytics and became the
+// guard. See lib/rateLimit.ts.
 
 generator client {
   provider = "prisma-client-js"
@@ -30,6 +29,9 @@ datasource db {
 /// A table rather than a comma-separated env var: adding someone should not need a
 /// redeploy, and this leaves somewhere to hang per-admin state later. Seeded by
 /// prisma/seed.mjs — an empty table locks everyone out, including you.
+///
+/// This is the *only* kind of account in the system. There is no customer record to be
+/// confused with, which is a simplification the removal of the paywall bought.
 model Admin {
   id    String  @id @default(cuid())
   /// Lowercased on write. Compared against the verified Google address at sign-in.
@@ -39,252 +41,61 @@ model Admin {
   createdAt DateTime @default(now())
 }
 
-/* ------------------------------------------------------------------- accounts */
+/* ----------------------------------------------------------------- donations */
 
-enum UserStatus {
-  ACTIVE
-  /// Blocked for abuse. Every token is refused, whatever their entitlement says.
-  BANNED
-}
-
-enum EntitlementSource {
-  TRIAL
-  /// Bought. Deliberately not named after a payment provider — this outlived Lemon
-  /// Squeezy, and renaming an enum value that appears in historical rows is a migration
-  /// nobody should have to write twice.
-  PURCHASE
-  /// Granted by hand from the dashboard.
-  ADMIN
-}
-
-/// A customer account.
+/// One "support this" button, editable at /admin/donations.
 ///
-/// Created by signing in with Google, and keyed on the verified address — which is also
-/// how a row created by an earlier purchase is reattached to the person who later signs
-/// in, rather than duplicated.
+/// A table rather than columns on `SiteSetting` because the number of places you can be
+/// paid changes over time, and adding PayPal beside Ko-fi should not be a migration.
 ///
-/// Holding an account is not the same as having access: that is `entitledUntil`, computed
-/// from the entitlement ledger. A signed-in user with no subscription is a normal state.
-///
-/// Distinct from `Admin`, which governs the dashboard only. The two tables are unrelated
-/// on purpose — being a customer must never imply anything about `/admin`.
-model User {
-  id     String     @id @default(cuid())
-  /// Lowercased on write, in every path that creates one.
-  email  String     @unique
-  name   String?
-  image  String?
-  status UserStatus @default(ACTIVE)
+/// `url` is validated by lib/donate.ts#safeUrl on write — http/https only, nothing else.
+/// This is not routine hygiene: these URLs are rendered by the extension *inside other
+/// people's pages*, so a `javascript:` here would be script execution on every site the
+/// extension touches.
+model DonationLink {
+  id String @id @default(cuid())
 
-  /// max(endsAt) over this user's un-revoked entitlements — the only access field read on
-  /// the hot path. Written solely by lib/entitlement.ts#recompute.
-  ///
-  /// Its two null-states carry meaning, and decide which error the API returns:
-  ///   null           -> never had access -> 402 no_subscription
-  ///   non-null, past -> it ran out       -> 402 subscription_expired
-  entitledUntil     DateTime?
-  entitlementSource EntitlementSource?
+  /// `paypal` | `kofi` | `buymeacoffee` | `patreon` | `github` | `liberapay` | `custom`.
+  /// Free text: it only picks an icon and a default colour, and an unknown value falls
+  /// back to a generic one rather than failing to render.
+  provider String
+  /// What the button says, e.g. "Buy me a coffee".
+  label    String
+  url      String
 
-  /// Non-null means the free trial has been used. A column rather than a derived value so
-  /// the sign-in path can decide without a second query on the row it just upserted.
-  trialGrantedAt DateTime?
+  /// Hidden rather than deleted, so a link can be taken down for a while and put back
+  /// without retyping it.
+  visible   Boolean @default(true)
+  sortOrder Int     @default(0)
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  /// Bumped at most once a day by the token validator, never per request.
-  lastSeenAt DateTime?
-
-  entitlements  Entitlement[]
-  licenses      License[]
-  searches      SearchLog[]
-  deviceSignals DeviceSignal[]
-
-  /// "Who is entitled / expiring this week", and the reconcile sweep.
-  @@index([entitledUntil])
-  /// The admin user list, newest first.
-  @@index([createdAt])
-}
-
-/// One granted period of access. Append-only.
-///
-/// Periods stack rather than replace: a new one starts at `max(now, entitledUntil)`, so
-/// redeeming a month on day 2 of a trial gives day 7 to day 37, not day 2 to day 32.
-/// Access is max(endsAt) and never a sum, so overlapping rows cannot double-count.
-model Entitlement {
-  id       String            @id @default(cuid())
-  userId   String
-  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  source   EntitlementSource
-  startsAt DateTime          @default(now())
-  endsAt   DateTime
-
-  /// Chargebacks and abuse only — *not* cancellation. Someone who cancels keeps the period
-  /// they paid for; the absence of the next renewal is what ends their access.
-  revokedAt DateTime?
-  note      String?
-  createdAt DateTime  @default(now())
-
-  /// Trial-once and webhook replay, both enforced by one unique index instead of
-  /// hand-written checks:
-  ///   trial:<emailHash>
-  ///   purchase:<subscriptionId>:<renewsAt>
-  ///   admin:<cuid>
-  dedupeKey String @unique
-
-  /// The recompute fold: this user's rows, ordered by end date.
-  @@index([userId, endsAt])
-  /// The reconcile sweep: rows that ended since it last ran.
-  @@index([endsAt])
-}
-
-/// One row per address that has ever been given the free trial.
-///
-/// Deliberately unrelated to `User`. Recording "trial used" on the `Entitlement` ledger is
-/// not enough: entitlements cascade when an account is deleted, so deleting and signing up
-/// again would mint a fresh seven days, forever. This row has no foreign key and so
-/// survives that.
-///
-/// The address is stored as a hash, so an account can be erased without leaving the email
-/// behind. Rotating `TRIAL_HASH_SALT` re-opens the trial for everyone — which is a
-/// legitimate thing to want, and a surprising thing to do by accident.
-model TrialClaim {
-  emailHash String   @id
-  claimedAt DateTime @default(now())
-}
-
-/* ------------------------------------------------------------------- licences */
-
-enum LicenseSource {
-  /// Bought. The key came from the payment provider, which generated it and gave it to
-  /// the buyer — as opposed to one we minted ourselves.
-  PURCHASE
-  TRIAL
-  /// Issued by hand from the dashboard.
-  ADMIN
-}
-
-enum LicenseStatus {
-  ACTIVE
-  /// Chargeback, abuse, or a key the buyer asked to have replaced.
-  REVOKED
-}
-
-/// The thing a customer pastes into the extension.
-///
-/// This is the credential the extension carries — it never signs in, and there is no token
-/// of our own. A key may be one we minted or one a payment provider generated at checkout;
-/// either way we see it once, hash it, and recognise it again.
-///
-/// Whether it *works* is a separate question from whether it exists: validity comes from
-/// the owner's `User.entitledUntil`, so a lapsed subscription leaves the key intact and
-/// simply stops opening the door. Renewing revives the same key.
-model License {
-  id      String @id @default(cuid())
-  /// sha256 of the key. The buyer keeps the only copy; we never need to show it back.
-  keyHash String @unique
-  /// The first few characters, so a key can be recognised in the dashboard without
-  /// storing enough of it to use.
-  keyHint String
-
-  source LicenseSource
-  status LicenseStatus @default(ACTIVE)
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  /// The payment provider's own ids, so a renewal or cancellation can find this row again.
-  /// Null on every key we issue ourselves.
-  externalId     String? @unique
-  subscriptionId String?
-
-  /// Copied from `SiteSetting.defaultDeviceLimit` when the licence is created, rather than
-  /// read live — raising or lowering the default must not retroactively lock somebody out
-  /// of a device they are already using.
-  activationLimit Int @default(2)
-
-  createdAt  DateTime  @default(now())
-  lastUsedAt DateTime?
-  note       String?
-
-  activations LicenseActivation[]
-
-  @@index([userId])
-  @@index([subscriptionId])
-}
-
-/// One device a licence is being used on.
-///
-/// A "device" is the extension's anonymous per-install id. The unique constraint below is
-/// what enforces the limit: two browsers racing for the last free slot both try to insert,
-/// and exactly one succeeds.
-model LicenseActivation {
-  id        String  @id @default(cuid())
-  licenseId String
-  license   License @relation(fields: [licenseId], references: [id], onDelete: Cascade)
-
-  installId  String
-  lastSeenAt DateTime @default(now())
-  createdAt  DateTime @default(now())
-
-  @@unique([licenseId, installId])
-  @@index([licenseId])
-}
-
-/* ---------------------------------------------------------------------- plans */
-
-enum PlanInterval {
-  TRIAL
-  MONTH
-  /// Half a year. `days` is 182, not 183 — half of 365 rounded down, so the customer is
-  /// never charged a day early.
-  SIX_MONTH
-  YEAR
-}
-
-/// What the pricing page offers.
-///
-/// In the database rather than in code because prices change and a deploy should not be the
-/// way to change them — and because the same number written in two places drifts apart.
-/// Seeded by prisma/seed.mjs so a fresh install has a working pricing page.
-model Plan {
-  /// `trial` | `monthly` | `yearly`. Stable, and used in URLs.
-  slug String @id
-  name String
-
-  /// Cents. Money is never a float.
-  priceCents Int
-  currency   String       @default("USD")
-  interval   PlanInterval
-  /// How long one purchase grants. 7 for the trial, 30, 365.
-  days       Int
-
-  /// The payment provider's buy link, set at /admin/settings. Empty for the trial, which is
-  /// handled here — and empty for everything else until a provider is wired up, which the
-  /// pricing page renders as "coming soon" rather than a button that goes nowhere.
-  checkoutUrl String?
-  blurb       String?
-  visible     Boolean @default(true)
-  sortOrder   Int     @default(0)
-
+  createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  /// The read the public API does: visible links, in order.
+  @@index([visible, sortOrder])
 }
 
 /* ------------------------------------------------------------------ telemetry */
 
 enum SearchOutcome {
   OK
-  /// Turned away by the gate — so the dashboard can see demand it refused.
+  /// Turned away by the rate limiter — so the dashboard can see demand it refused. This
+  /// used to mean "no subscription"; there are no subscriptions now, and the value was
+  /// kept rather than renamed because renaming an enum value that appears in historical
+  /// rows is a migration nobody should have to write twice.
   DENIED
   UPSTREAM_ERROR
 }
 
-/// One subtitle search. The dashboard's "this user and their queries".
+/// One subtitle search.
+///
+/// Kept through the removal of accounts, and re-pointed at the install id. It answers two
+/// questions that still matter without customers: what are people looking for and failing
+/// to find, and is one install hammering the API.
 model SearchLog {
   /// Autoincrement, not cuid: this is the only high-volume table here, and a 25-byte
   /// random primary key buys nothing while fragmenting the index.
-  id     BigInt  @id @default(autoincrement())
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id BigInt @id @default(autoincrement())
 
   /// Already normalised by parseQuery — whitespace collapsed, at most 100 characters.
   query    String
@@ -296,12 +107,17 @@ model SearchLog {
   cached  Boolean       @default(false)
   results Int           @default(0)
 
-  ipHash    String?
+  /// Salted SHA-256 of the caller's address. See lib/callerId.ts.
+  ipHash String?
+  /// The extension's anonymous per-install id. Now the primary way one caller is told from
+  /// another, since there is no user to attribute a search to.
   installId String?
+
   createdAt DateTime @default(now())
 
-  @@index([userId, createdAt])
   @@index([createdAt])
+  /// "Which installs are busiest", which is the abuse view.
+  @@index([installId, createdAt])
   /// The popular-titles aggregate.
   @@index([query])
 }
@@ -311,8 +127,11 @@ model SearchLog {
 /// In Postgres rather than the in-memory TtlCache because that cache is per-instance and
 /// lost on cold start — fine for caching subtitle pages, useless for anything an abuser
 /// benefits from resetting.
+///
+/// This is now the *only* thing limiting who may use the search API. It was a secondary
+/// guard behind the licence check; it is the whole guard now.
 model RateLimit {
-  /// "search:user:<id>:2026-08-09T14" | "redeem:ip:<ipHash>:2026-08-09"
+  /// "search:install:<id>:<windowStart>" | "search:ip:<ipHash>:<windowStart>"
   key       String   @id
   count     Int      @default(0)
   expiresAt DateTime
@@ -326,32 +145,25 @@ model RateLimit {
 ///
 /// The id is fixed and every write is an upsert, so a second row cannot appear.
 ///
-/// Everything here was once a constant in the code. It moved because each one is a number
-/// the operator needs to change in response to something — abuse, cost, a promotion — and
-/// waiting for a deploy to do it is the wrong shape.
+/// Everything here was once a constant in the code. It moved because each one is something
+/// the operator needs to change in response to an event — abuse, cost, a new donation
+/// page — and waiting for a deploy to do it is the wrong shape.
 model SiteSetting {
   id String @id @default("singleton")
 
-  /// The upgrade prompt, shown to people without a subscription on the site and in the
-  /// extension panel.
-  promptEnabled Boolean @default(false)
-  promptMessage String  @default("Subtitle search keeps a server running. A subscription is what pays for it.")
+  /// The donation prompt, shown on the site and in the extension panel. The buttons
+  /// beneath it are `DonationLink` rows; this is the sentence above them.
+  donateEnabled Boolean @default(false)
+  donateHeading String  @default("Support the extension")
+  donateMessage String  @default("This is free and has no ads. If it saved you an evening, a coffee helps keep the server running.")
   /// Validated `^#[0-9a-fA-F]{6}$` on write — it ends up in inline styles in two codebases,
   /// one of which renders inside other people's pages.
-  promptColor   String  @default("#38bdf8")
-  promptUrl     String?
+  donateColor   String  @default("#38bdf8")
 
-  /// Request limits, per licence. Tighten these when somebody is hammering the API; they
+  /// Request limits, per install. Tighten these when somebody is hammering the API; they
   /// take effect within a minute rather than at the next deploy.
   searchPerHour Int @default(60)
   searchPerDay  Int @default(300)
-
-  /// How many devices a *newly issued* licence may run on. Existing licences keep the
-  /// limit they were created with.
-  defaultDeviceLimit Int @default(2)
-
-  /// How long the free trial lasts.
-  trialDays Int @default(7)
 
   updatedAt DateTime @updatedAt
 }
@@ -400,47 +212,4 @@ model Submission {
   // The queue is read newest-first and filtered by status; both are covered here.
   @@index([status, createdAt])
   @@index([kind, createdAt])
-}
-
-/// A device seen signing in to an account.
-///
-/// Exists to answer one question: are these two accounts the same person? Someone farming
-/// free trials signs up repeatedly from one machine, and nothing else in the schema would
-/// show it — `TrialClaim` stops a second trial on the *same address*, not a second address.
-///
-/// **Stores a hash, not a fingerprint.** `visitorHash` is FingerprintJS's visitor id run
-/// through the same salted SHA-256 used elsewhere. Matching still works, because equal
-/// inputs hash equally — but the table is not itself a device-tracking database, and it
-/// cannot be joined against one obtained anywhere else. The coarse columns beside it exist
-/// so a human reviewing a suspected duplicate has something legible to judge, rather than
-/// two opaque hashes that happen to match.
-///
-/// Only written when someone signs in to the web app. The extension never reports here:
-/// it has no session, and its per-install id already serves the device-limit purpose.
-model DeviceSignal {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  /// Salted SHA-256 of the FingerprintJS visitor id. See lib/deviceSignal.ts.
-  visitorHash String
-
-  /// Coarse, human-readable context for an admin reviewing a match. Deliberately not the
-  /// full component set — the hash already carries the discriminating power, and storing
-  /// the raw font list would make this a fingerprint database rather than a lookup key.
-  timezone  String?
-  screen    String?
-  platform  String?
-  languages String?
-  /// Salted SHA-256 of the caller's IP, using the same salt as the rest of the app.
-  ipHash    String?
-
-  firstSeenAt DateTime @default(now())
-  lastSeenAt  DateTime @updatedAt
-
-  /// One row per (account, device). Re-signing in updates `lastSeenAt` instead of growing
-  /// the table without bound.
-  @@unique([userId, visitorHash])
-  /// The query this table exists for: which accounts share a device.
-  @@index([visitorHash])
 }

@@ -1,25 +1,19 @@
 import type { AuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { isAdminEmail } from '@/lib/admins';
-import { grantSignupTrial, upsertCustomer } from '@/lib/customers';
 
 /**
- * Authentication, for customers and for the dashboard.
+ * Authentication, for the dashboard and nothing else.
  *
- * Both use the same Google provider and are told apart afterwards: any verified address may
- * sign in and gets a `User` row, and `token.isAdmin` is true only for addresses in the
- * separate `Admin` table.
+ * **`signIn` is a security boundary again.** It briefly was not: when customers had
+ * accounts, any verified Google address could hold a session and `token.isAdmin` was what
+ * told an admin apart. Customers have no accounts now — there is no `User` table to put
+ * them in — so an address outside the `Admin` table has nothing it could possibly do here,
+ * and is refused outright rather than given a useless session.
  *
- * **`signIn` is no longer a security boundary.** It used to refuse everyone who was not an
- * admin, which made "holds a session" and "is an admin" the same statement. They are now
- * different statements, so every admin surface must check for itself — `requireAdmin()` on
- * `/api/admin/*`, and `token.isAdmin` in `middleware.ts` for the pages. Both already did;
- * that is why opening this up is a small change rather than an audit.
- *
- * A banned user is still allowed to sign in. Their session is worthless — `requireUser()`
- * refuses it and every API call fails — but letting them reach an account page that says
- * so is better than an unexplained login failure, which reads as a bug and generates
- * support mail.
+ * `requireAdmin()` stays on every `/api/admin/*` route and `token.isAdmin` stays in
+ * `middleware.ts` regardless. Those are the checks that actually gate things; this one
+ * closes the front door.
  */
 
 /**
@@ -55,38 +49,18 @@ export const authOptions: AuthOptions = {
     async signIn({ profile }) {
       const email = profile?.email;
       // Without `email_verified` a federated account could in principle assert an address
-      // it does not own — and the address is what a `User` row is keyed on.
+      // it does not own — and the address is the whole of the admin check.
       const verified = (profile as { email_verified?: boolean } | undefined)?.email_verified;
       if (!email || verified === false) return false;
 
-      try {
-        const customer = await upsertCustomer({
-          email,
-          name: profile?.name ?? null,
-          image: (profile as { picture?: string } | undefined)?.picture ?? null,
-        });
-
-        if (customer.isNew) {
-          await grantSignupTrial(customer.id, customer.email);
-        }
-      } catch (err) {
-        // Refuse rather than hand out a session with no account behind it: every customer
-        // route resolves the session's email to a `User` row, and would 500 on each call.
-        console.error('[auth] could not create the customer record', err);
-        return false;
-      }
-
-      return true;
+      // Errs closed: `isAdminEmail` denies on a database failure rather than granting.
+      return isAdminEmail(email);
     },
 
     async jwt({ token }) {
       // Re-derived on every refresh, so deleting an `Admin` row ends dashboard access at
       // the next request rather than whenever the token would have expired.
       token.isAdmin = await isAdminEmail(token.email);
-
-      // Neither entitlement nor ban status is in the token. A subscription bought thirty
-      // seconds ago must work now, and a ban must bite now — not at the next refresh. Both
-      // are read from the database per request instead.
       return token;
     },
 
@@ -99,10 +73,10 @@ export const authOptions: AuthOptions = {
   },
 
   pages: {
-    // Neutral, because customers sign in here too now. `/admin/login` still exists as the
-    // dashboard's own entry point and is where `middleware.ts` sends a signed-in non-admin
-    // who reaches for `/admin`.
-    signIn: '/signin',
-    error: '/signin',
+    // The dashboard's own entry point. It pointed at a neutral `/signin` while customers
+    // had accounts; that route went with them, and leaving this behind meant a failed
+    // sign-in landed on a 404.
+    signIn: '/admin/login',
+    error: '/admin/login',
   },
 };

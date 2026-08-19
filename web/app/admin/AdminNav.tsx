@@ -20,8 +20,7 @@ const LINKS = [
   { href: '/admin', label: 'Overview', icon: HomeIcon, exact: true, badge: null },
   { href: '/admin/reports', label: 'Bug reports', icon: BugIcon, exact: false, badge: 'reports' },
   { href: '/admin/features', label: 'Requests', icon: InboxIcon, exact: false, badge: 'features' },
-  { href: '/admin/users', label: 'Users', icon: UsersIcon, exact: false, badge: null },
-  { href: '/admin/licenses', label: 'Licences', icon: TicketIcon, exact: false, badge: null },
+  { href: '/admin/donations', label: 'Donations', icon: HeartIcon, exact: false, badge: null },
   { href: '/admin/settings', label: 'Settings', icon: SlidersIcon, exact: false, badge: null },
   { href: '/admin/api', label: 'API reference', icon: CodeIcon, exact: false, badge: null },
 ] as const;
@@ -90,24 +89,6 @@ function InboxIcon() {
   );
 }
 
-function UsersIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <circle cx="9" cy="8" r="3.2" />
-      <path strokeLinecap="round" d="M3.5 19.5a5.5 5.5 0 0 1 11 0M16 5.2a3.2 3.2 0 0 1 0 6M17.5 14.4a5.5 5.5 0 0 1 3 5.1" />
-    </svg>
-  );
-}
-
-function TicketIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
-      <path strokeLinejoin="round" d="M3 9.2V7a1.5 1.5 0 0 1 1.5-1.5h15A1.5 1.5 0 0 1 21 7v2.2a2.8 2.8 0 0 0 0 5.6V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17v-2.2a2.8 2.8 0 0 0 0-5.6Z" />
-      <path strokeLinecap="round" d="M14 6v12" strokeDasharray="2 2.5" />
-    </svg>
-  );
-}
-
 function SlidersIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
@@ -122,6 +103,14 @@ function CodeIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
       <path strokeLinecap="round" strokeLinejoin="round" d="m8 7-5 5 5 5m8-10 5 5-5 5M14 4l-4 16" />
+    </svg>
+  );
+}
+
+function HeartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.7">
+      <path strokeLinejoin="round" d="M12 20s-7.2-4.4-8.9-9A4.6 4.6 0 0 1 12 7.4a4.6 4.6 0 0 1 8.9 3.6c-1.7 4.6-8.9 9-8.9 9Z" />
     </svg>
   );
 }

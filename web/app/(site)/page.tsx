@@ -2,9 +2,13 @@ import Link from 'next/link';
 import { Hero } from '@/components/Hero';
 import { FeatureRow } from '@/components/FeatureRow';
 import { FREE_FEATURES, SEARCH_FEATURES } from '@/lib/features';
-import { DONATE_URL, STORE_URL } from '@/lib/site';
+import { STORE_URL } from '@/lib/site';
+import { donatePrompt } from '@/lib/donate';
+import { DonateButtons } from '@/components/DonateButtons';
 
-export default function Home() {
+export default async function Home() {
+  const prompt = await donatePrompt();
+
   return (
     <main>
       <Hero />
@@ -64,24 +68,21 @@ export default function Home() {
         </div>
       </section>
 
-      {DONATE_URL && (
+      {prompt.enabled && prompt.links.length > 0 && (
         <section className="mx-auto mt-6 max-w-6xl px-5">
           <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line px-8 py-6">
             <div>
-              <h2 className="font-display text-lg font-bold tracking-tight">Support it</h2>
+              <h2 className="font-display text-lg font-bold tracking-tight">
+                {prompt.heading || 'Support it'}
+              </h2>
               <p className="mt-1 max-w-xl text-pretty text-sm leading-relaxed text-muted">
-                Built by one person, and the search runs on a server that costs money whether
-                anyone uses it or not.
+                {prompt.message ||
+                  'Built by one person, and the search runs on a server that costs money whether anyone uses it or not.'}
               </p>
             </div>
-            <a
-              href={DONATE_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-auto rounded-xl border border-accent px-5 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent hover:text-white"
-            >
-              Donate
-            </a>
+            <div className="ml-auto">
+              <DonateButtons links={prompt.links} color={prompt.color} />
+            </div>
           </div>
         </section>
       )}

@@ -7,7 +7,7 @@ export default defineConfig({
   },
   test: {
     // The live smoke test is opt-in — see lib/subtitlecat/live.test.ts. So are the
-    // database-backed ones — see lib/entitlement.test.ts.
+    // database-backed ones — none remain, but the pattern is kept for when one returns.
     include: ['**/*.test.ts'],
     exclude: ['**/node_modules/**', '**/.next/**'],
     setupFiles: ['./vitest.setup.mts'],

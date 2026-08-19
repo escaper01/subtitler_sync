@@ -4,22 +4,18 @@ import { NextResponse } from 'next/server';
 /**
  * Gate the pages that need a session.
  *
- * Two different requirements share one matcher, because `withAuth` has a single
- * `authorized` callback for every path it covers:
- *
- *   /admin/*  needs a session AND `token.isAdmin`
- *
- * Customers have no session at all — they hold a licence key, which the API checks. So the
- * only thing gated here is the dashboard.
+ * There is exactly one requirement now: `/admin/*` needs a session **and**
+ * `token.isAdmin`. Nobody else has a session at all — customer accounts are gone, and the
+ * extension carries no credential — so the dashboard is the only thing there is to gate.
  *
  * A client-side guard would not do for `/admin`: it renders null only after hydration, by
  * which point the whole page bundle — and anything a server component fetched into it —
  * has already been sent to whoever asked.
  *
  * **This deliberately does not cover `/api/*`.** Middleware runs on the edge runtime and
- * cannot reach Prisma, and the extension authenticates with a header rather than a cookie,
- * so it would be checking the wrong thing. API routes answer for themselves — see
- * `lib/requireAdmin.ts` and `lib/gate.ts`.
+ * cannot reach Prisma, and the extension's endpoints have no session to check in the first
+ * place. Those routes answer for themselves — `lib/requireAdmin.ts` under `/api/admin/*`,
+ * and `lib/rateLimit.ts` on the public ones.
  */
 export default withAuth(
   function middleware(req) {
@@ -37,7 +33,7 @@ export default withAuth(
   },
   {
     callbacks: { authorized: ({ token }) => Boolean(token) },
-    pages: { signIn: '/signin' },
+    pages: { signIn: '/admin/login' },
   },
 );
 

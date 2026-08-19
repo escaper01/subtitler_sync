@@ -7,7 +7,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { STORE_URL } from '@/lib/site';
 
 const LINKS = [
-  { href: '/pricing', label: 'Pricing' },
+  { href: '/donate', label: 'Donate' },
   { href: '/how-to-use', label: 'How to use' },
   { href: '/report', label: 'Report a problem' },
   { href: '/feature-request', label: 'Request a feature' },

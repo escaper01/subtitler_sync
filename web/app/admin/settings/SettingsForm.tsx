@@ -5,13 +5,11 @@ import { useState, useTransition } from 'react';
 
 interface Settings {
   enabled: boolean;
+  heading: string;
   message: string;
   color: string;
-  url: string;
   searchPerHour: number;
   searchPerDay: number;
-  defaultDeviceLimit: number;
-  trialDays: number;
 }
 
 export function SettingsForm({ initial }: { initial: Settings }) {
@@ -64,7 +62,21 @@ export function SettingsForm({ initial }: { initial: Settings }) {
           onChange={(e) => patch({ enabled: e.target.checked })}
           className="h-4 w-4 accent-[var(--accent-solid)]"
         />
-        <span className="text-sm font-medium">Show the upgrade prompt</span>
+        <span className="text-sm font-medium">Show the donation prompt</span>
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-xs text-muted">
+          Heading
+          <span className="ml-2 tabular-nums">{form.heading.length}/60</span>
+        </span>
+        <input
+          type="text"
+          maxLength={60}
+          value={form.heading}
+          onChange={(e) => patch({ heading: e.target.value })}
+          className={field}
+        />
       </label>
 
       <label className="block">
@@ -81,36 +93,23 @@ export function SettingsForm({ initial }: { initial: Settings }) {
         />
       </label>
 
-      <div className="flex flex-wrap gap-3">
-        <label className="min-w-48 flex-1">
-          <span className="mb-1 block text-xs text-muted">Link</span>
+      <label className="block w-fit">
+        <span className="mb-1 block text-xs text-muted">Colour</span>
+        <div className="flex items-center gap-2">
           <input
-            type="url"
-            value={form.url}
-            placeholder="https://…/pricing"
-            onChange={(e) => patch({ url: e.target.value })}
-            className={field}
+            type="color"
+            value={form.color}
+            onChange={(e) => patch({ color: e.target.value })}
+            className="h-9 w-12 cursor-pointer rounded-lg border border-line bg-transparent p-1"
           />
-        </label>
-
-        <label>
-          <span className="mb-1 block text-xs text-muted">Colour</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="color"
-              value={form.color}
-              onChange={(e) => patch({ color: e.target.value })}
-              className="h-9 w-12 cursor-pointer rounded-lg border border-line bg-transparent p-1"
-            />
-            <input
-              type="text"
-              value={form.color}
-              onChange={(e) => patch({ color: e.target.value })}
-              className={`${field} w-28 font-mono`}
-            />
-          </div>
-        </label>
-      </div>
+          <input
+            type="text"
+            value={form.color}
+            onChange={(e) => patch({ color: e.target.value })}
+            className={`${field} w-28 font-mono`}
+          />
+        </div>
+      </label>
 
       <div>
         <span className="mb-1 block text-xs text-muted">How it will look</span>
@@ -118,19 +117,24 @@ export function SettingsForm({ initial }: { initial: Settings }) {
           className="rounded-xl border px-4 py-3"
           style={{ borderColor: `${form.color}66`, backgroundColor: `${form.color}14` }}
         >
-          {/* Text, never markup — this same string renders inside other people's pages. */}
-          <p className="text-sm leading-relaxed">{form.message || 'Nothing to show yet.'}</p>
+          {/* Text, never markup — these same strings render inside other people's pages. */}
+          <p className="text-sm font-medium">{form.heading || 'No heading'}</p>
+          <p className="mt-1 text-sm leading-relaxed">
+            {form.message || 'Nothing to show yet.'}
+          </p>
         </div>
       </div>
 
       <fieldset className="rounded-2xl border border-line p-4">
-        <legend className="px-1 text-xs text-muted">Limits</legend>
+        <legend className="px-1 text-xs text-muted">Search limits</legend>
         <p className="text-xs leading-relaxed text-muted">
-          Per licence, not per person — somebody with two keys bought two. Tightening these
-          takes effect within a minute.
+          Per extension install, with a looser bucket per IP address behind it. These are now
+          the only thing standing in front of the search API — there is no licence check any
+          more — so they are worth setting deliberately. Tightening them takes effect within
+          a minute.
         </p>
 
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-3">
           <label>
             <span className="mb-1 block text-xs text-muted">Searches / hour</span>
             <input
@@ -151,34 +155,13 @@ export function SettingsForm({ initial }: { initial: Settings }) {
               className={field}
             />
           </label>
-          <label>
-            <span className="mb-1 block text-xs text-muted">Devices / key</span>
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={form.defaultDeviceLimit}
-              onChange={(e) => patch({ defaultDeviceLimit: Number(e.target.value) })}
-              className={field}
-            />
-          </label>
-          <label>
-            <span className="mb-1 block text-xs text-muted">Trial days</span>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={form.trialDays}
-              onChange={(e) => patch({ trialDays: Number(e.target.value) })}
-              className={field}
-            />
-          </label>
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-muted">
-          Changing the device limit applies to licences issued afterwards. Existing keys keep
-          the limit they were created with, so nobody is locked out of a device they are
-          already using.
+          Loading a subtitle also hits <code className="font-mono">/api/release</code> and{' '}
+          <code className="font-mono">/api/download</code>, which carry their own allowance
+          at three times these numbers — so a search limit of 60 does not mean 30 completed
+          loads.
         </p>
       </fieldset>
 
