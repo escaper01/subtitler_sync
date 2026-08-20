@@ -33,19 +33,20 @@ export default function ApiDocPage() {
 
       <Endpoint
         method="GET"
-        path="/api/search?q=<title>&lang=en&page=1"
-        summary={`One page of ${PAGE_SIZE} releases, each already expanded into its subtitle in that language.`}
+        path="/api/search?q=<title>&lang=en,de&page=1"
+        summary={`One page of ${PAGE_SIZE} releases, each already expanded into its subtitles in the requested languages.`}
         notes={[
           'q — 2 to 100 characters, whitespace collapsed.',
-          'lang — exactly one supported code. An unknown one is a 400, not an empty result.',
+          'lang — one or two supported codes, comma-separated. An unknown one is a 400, not an empty result.',
+          'Two languages cost the same upstream as one: a release page is fetched once and carries every language, so the client asks for both rather than making a second call per release.',
           'page — 1-based, capped at 50.',
         ]}
       />
 
       <Endpoint
         method="GET"
-        path="/api/release?path=<release path>&lang=en"
-        summary="One release's subtitle in one language."
+        path="/api/release?path=<release path>&lang=en,de"
+        summary="One release's subtitles, in one or two languages."
         notes={[
           'path — site-relative, resolved against subtitlecat and rejected if it escapes.',
           'A release that no longer exists answers 404, even though upstream returns 200.',

@@ -97,16 +97,30 @@ Next 16, and neither surface is used here.
 
 ```
 GET  /api/search?q=<title>&lang=en&page=1   one page of releases, each already expanded
-GET  /api/release?path=<release>&lang=en    one release, one language
+GET  /api/release?path=<release>&lang=en    one release
+     ...&lang=en,de                         both forms take one or two languages
 GET  /api/download?path=<srt>               the subtitle text itself
 GET  /api/donate                            the donation prompt and its buttons
 POST /api/feedback                          bug reports and feature requests (public)
 ```
 
-**Exactly one language, and it must be one we offer.** An unknown code is a 400, not an
+**One or two languages, and each must be one we offer.** An unknown code is a 400, not an
 empty result: silently filtering everything away is indistinguishable from "this film has
 no subtitles", which is a far worse thing to debug than an error. `q` is 2–100 characters
 with whitespace collapsed, so `"  the   matrix "` and `"the matrix"` are one cache entry.
+
+**Asking for two costs exactly what asking for one costs, and this is the point.**
+`releaseTracks` fetches a release page once and it already carries *every* language;
+`filterByLanguages` is post-processing over data that is in hand either way, and
+`detailCache` is keyed on the release id rather than the language. So the extension's dual
+subtitles send `lang=en,de` in the one search rather than making a second request per
+release — which would have spent a rate-limit token to re-filter a cache hit.
+
+The cap is `MAX_LANGUAGES` (2), and it is about response size rather than upstream cost:
+five releases times a hundred and fifty machine translations is a large body to send for no
+reason. Order is preserved — the caller's first language is their primary subtitle track,
+and each release's tracks come back in that order so the client need not re-sort a list it
+did not build.
 
 A page is `PAGE_SIZE` (5) releases and **every release on it is expanded**, so a page is
 also the unit of upstream work: one search fetch plus five detail fetches, regardless of

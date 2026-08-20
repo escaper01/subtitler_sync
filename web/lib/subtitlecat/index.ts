@@ -18,7 +18,9 @@ const detailCache = new TtlCache<{ title: string; tracks: Track[]; missing: bool
 
 /**
  * Every release on a page is expanded, so a page is also the unit of upstream work: one
- * search fetch plus `PAGE_SIZE` detail fetches, no matter how many releases matched.
+ * search fetch plus `PAGE_SIZE` detail fetches, no matter how many releases matched —
+ * **or how many languages were asked for**. A release page carries every language, so the
+ * language filter is post-processing over data already fetched and already cached.
  */
 export const EXPAND_COUNT = PAGE_SIZE;
 
@@ -68,7 +70,7 @@ export async function releaseTracks(path: string): Promise<ReleaseResponse> {
  */
 export async function searchExpanded(
   query: string,
-  language: string,
+  languages: readonly string[],
   page: number,
 ): Promise<SearchResponse> {
   const all = await search(query);
@@ -88,12 +90,12 @@ export async function searchExpanded(
     if (!release || result.status !== 'fulfilled') return;
 
     expanded.push(release.id);
-    tracks.push(...filterByLanguage(result.value.tracks, language));
+    tracks.push(...filterByLanguages(result.value.tracks, languages));
   });
 
   return {
     query: query.trim(),
-    language,
+    languages: [...languages],
     page,
     pageSize: PAGE_SIZE,
     total: all.length,
@@ -104,10 +106,29 @@ export async function searchExpanded(
   };
 }
 
-/** Keep only the one language asked for. */
-export function filterByLanguage(tracks: readonly Track[], language: string): Track[] {
-  const wanted = language.toLowerCase();
-  return tracks.filter((track) => track.code.toLowerCase() === wanted);
+/**
+ * Keep only the languages asked for, **in the order they were asked for**.
+ *
+ * The ordering is the useful half. The caller's first language is their primary subtitle
+ * track, so returning that one first per release means the client renders the row it is
+ * most likely to want at the top without re-sorting a list it did not build.
+ *
+ * Costs nothing upstream: `releaseTracks` fetches a release page once and it already
+ * contains every language. This filter runs over data that is in hand either way, which is
+ * why asking for two languages is the same amount of work as asking for one.
+ */
+export function filterByLanguages(
+  tracks: readonly Track[],
+  languages: readonly string[],
+): Track[] {
+  const order = new Map(languages.map((code, index) => [code.toLowerCase(), index]));
+
+  return tracks
+    .filter((track) => order.has(track.code.toLowerCase()))
+    .sort(
+      (a, b) =>
+        (order.get(a.code.toLowerCase()) ?? 0) - (order.get(b.code.toLowerCase()) ?? 0),
+    );
 }
 
 /** Fetch a `.srt`'s text. The path comes from a `Track`, and is re-validated upstream. */

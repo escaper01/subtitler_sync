@@ -1,4 +1,4 @@
-import { denied, fail, fromError, json, MAX_QUERY_LENGTH, parseLanguage, parsePage, parseQuery, preflight } from '@/lib/api';
+import { denied, fail, fromError, json, MAX_QUERY_LENGTH, parseLanguages, parsePage, parseQuery, preflight } from '@/lib/api';
 import { checkSearchLimits } from '@/lib/rateLimit';
 import { searchExpanded } from '@/lib/subtitlecat';
 import { logSearch } from '@/lib/searchLog';
@@ -26,15 +26,18 @@ export async function GET(request: Request): Promise<Response> {
     return fail(`Give me a title between 2 and ${MAX_QUERY_LENGTH} characters`, 400);
   }
 
-  const language = parseLanguage(params.get('lang'));
-  if (!language) return fail('Pick a supported language', 400);
+  // One or two: `lang=en` or `lang=en,de`. Two costs subtitlecat exactly what one does —
+  // a release page is fetched once and carries every language — so a client showing two
+  // subtitle tracks should ask for both here rather than making a second request.
+  const languages = parseLanguages(params.get('lang'));
+  if (!languages) return fail('Pick one or two supported languages', 400);
 
   const page = parsePage(params.get('page'));
 
   // Before any upstream work: a refused search must cost subtitlecat nothing.
   const limit = await checkSearchLimits(request);
   if (!limit.allowed) {
-    logSearch({ query, language, page, outcome: 'DENIED', request });
+    logSearch({ query, language: languages.join(','), page, outcome: 'DENIED', request });
     return denied(
       'rate_limited',
       'That is a lot of searching. Try again shortly.',
@@ -45,10 +48,10 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   try {
-    const result = await searchExpanded(query, language, page);
+    const result = await searchExpanded(query, languages, page);
     logSearch({
       query,
-      language,
+      language: languages.join(','),
       page,
       outcome: 'OK',
       results: result.releases.length,
@@ -56,7 +59,7 @@ export async function GET(request: Request): Promise<Response> {
     });
     return json(result);
   } catch (err) {
-    logSearch({ query, language, page, outcome: 'UPSTREAM_ERROR', request });
+    logSearch({ query, language: languages.join(','), page, outcome: 'UPSTREAM_ERROR', request });
     return fromError(err);
   }
 }

@@ -337,26 +337,29 @@ search. See below.
 
 ### Loading a pair
 
-With dual subtitles on, the Find tab offers both slots:
+With dual subtitles on, the search asks for **both languages in one request** —
+`lang=en,de` — and every result row offers both slots:
 
-- Every result row's tracks get **1st / 2nd** buttons instead of one *Use*. `loadTrack` takes
-  an explicit slot, and the Find tab always passes one — "load this as the second subtitle"
-  must not depend on having remembered to flip the selector at the top of a scrolled panel.
-- Each release also gets **+ 2nd**, which fetches *that release* in the second language and
-  loads it into the secondary slot. The same release is the one most likely to share its
-  timing, so once the first track is aligned the second often needs nothing.
+- Each release's tracks arrive already grouped and **ordered by the requested languages**,
+  so the primary language's track is the row on top.
+- Tracks get **1st / 2nd** buttons instead of one *Use*. `loadTrack` takes an explicit
+  slot, and the Find tab always passes one — "load this as the second subtitle" must not
+  depend on having remembered to flip the selector at the top of a scrolled panel.
+- A release that has one language but not the other says which is missing. One row where
+  two were expected otherwise looks like the second picker was ignored.
 
-**The second language is fetched per release, on press — never for the whole page.** That is
-a rate-limit constraint, not a preference. Expanding all five results in a second language
-would double the upstream cost of every search, and `/api/release` carries three times the
-search allowance rather than five times (`FETCH_MULTIPLIER` in `web/lib/rateLimit.ts`), so a
-page of five would spend it within the hour. `find.tracks2` is therefore populated one
-release at a time, and cached **even when empty** so a release with nothing in that language
-is not refetched on every press.
+**Asking for both in one request is the correct shape, not an optimisation.** The server
+fetches a release page once and it already contains every language — `filterByLanguages` is
+post-processing, and `detailCache` is keyed on the release id rather than the language. A
+second request per release would therefore have spent a rate-limit token to re-filter a
+cache hit. There was briefly a per-release "+ 2nd" button doing exactly that; widening
+`lang=` deleted it and the state behind it.
 
-`language2` falls back to the primary rather than to English — proposing a language the user
-does not read is worse than proposing the one they just picked. Equal languages are a
-harmless state: the **+ 2nd** button simply does not appear until they differ.
+`searchLangParam` builds the parameter, and sends one code when dual mode is off or when
+both languages are the same. `language2` falls back to the primary rather than to English —
+proposing a language the user does not read is worse than proposing the one they just
+picked — so equal languages are a normal state, and the second picker simply has no effect
+until it is changed.
 
 Results are paged, five per page, and every release on a page arrives expanded. That bound is
 the point: without it a search for a popular film meant thirty-odd detail fetches against

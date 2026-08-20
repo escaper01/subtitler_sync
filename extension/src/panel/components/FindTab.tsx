@@ -201,7 +201,6 @@ function ReleaseRow({ release }: { release: Release }) {
   const find = usePanel((s) => s.find);
   const toggleRelease = usePanel((s) => s.toggleRelease);
   const loadTrack = usePanel((s) => s.loadTrack);
-  const loadReleaseInto = usePanel((s) => s.loadReleaseInto);
   const dual = usePanel((s) => s.dual);
   const language = usePanel((s) => s.language);
   const language2 = usePanel((s) => s.language2);
@@ -210,6 +209,12 @@ function ReleaseRow({ release }: { release: Release }) {
   // Everything on a page arrives expanded, so a row starts open unless its fetch failed.
   const [open, setOpen] = useState(tracks !== undefined);
   const busy = find.expanding.includes(release.id);
+
+  // Which of the languages we asked for this release turned out not to have. Worth saying:
+  // one row where two were expected otherwise looks like the second picker was ignored.
+  const asked = dual.enabled && language2 !== language ? [language, language2] : [language];
+  const got = new Set((tracks ?? []).map((track) => track.code.toLowerCase()));
+  const absent = tracks === undefined ? [] : asked.filter((code) => !got.has(code.toLowerCase()));
 
   const onToggle = (): void => {
     setOpen(!open);
@@ -241,7 +246,9 @@ function ReleaseRow({ release }: { release: Release }) {
           {busy && <p className="py-1 text-[10px] text-white/35">Loading…</p>}
 
           {!busy && tracks !== undefined && tracks.length === 0 && (
-            <p className="py-1 text-[10px] text-white/35">Not available in this language.</p>
+            <p className="py-1 text-[10px] text-white/35">
+              Not available in {asked.length > 1 ? 'either language' : 'this language'}.
+            </p>
           )}
 
           {!busy &&
@@ -291,64 +298,15 @@ function ReleaseRow({ release }: { release: Release }) {
               );
             })}
 
-          <SecondLanguage
-            release={release}
-            enabled={dual.enabled && language2 !== language}
-            language2={language2}
-            onLoad={() => void loadReleaseInto(release, 1)}
-          />
+          {/* Only when *some* tracks came back — a release with none already says so above,
+              and repeating it per language would be two messages for one fact. */}
+          {!busy && tracks !== undefined && tracks.length > 0 && absent.length > 0 && (
+            <p className="pt-0.5 text-[10px] text-white/30">
+              No {absent.map((code) => languageName(code)).join(' or ')} for this release.
+            </p>
+          )}
         </div>
       )}
     </li>
-  );
-}
-
-/**
- * "Also load this release in the second language."
- *
- * The pairing the whole feature exists for. The *same* release in another language is the
- * one most likely to share its timing, so once the first track is aligned the second
- * usually needs nothing — which is not true of a track picked from a different upload.
- *
- * Fetched only when pressed. Expanding every result in a second language would double the
- * upstream cost of every search, and `/api/release` has three times the search allowance,
- * not five times — a page of five would spend it within the hour.
- */
-function SecondLanguage({
-  release,
-  enabled,
-  language2,
-  onLoad,
-}: {
-  release: Release;
-  enabled: boolean;
-  language2: string;
-  onLoad: () => void;
-}) {
-  const find = usePanel((s) => s.find);
-
-  if (!enabled) return null;
-
-  const fetching = find.fetchingSecond === release.id;
-  const known = find.tracks2[release.id];
-  const empty = known !== undefined && known.length === 0;
-
-  return (
-    <div className="mt-0.5 flex items-center gap-2 border-t border-white/5 pt-1">
-      <span className="min-w-0 flex-1 truncate text-[10px] text-white/40">
-        {empty
-          ? `No ${languageName(language2)} for this release`
-          : `Same release in ${languageName(language2)}`}
-      </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        title={`Load this release's ${languageName(language2)} subtitle as the second one`}
-        onClick={onLoad}
-        disabled={empty || fetching || find.loading !== null}
-      >
-        {fetching ? '…' : '+ 2nd'}
-      </Button>
-    </div>
   );
 }

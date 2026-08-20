@@ -43,8 +43,14 @@ export const PAGE_SIZE = 5;
 
 export interface SearchResponse {
   query: string;
-  /** The language code the results were filtered to. */
-  language: string;
+  /**
+   * The language codes the results were filtered to, in the order they were asked for.
+   *
+   * One or two. Asking for two costs the server exactly what one does — a release page is
+   * fetched once and already carries every language — so a client showing two subtitle
+   * tracks should request both here rather than making a second call per release.
+   */
+  languages: string[];
   /** 1-based. */
   page: number;
   pageSize: number;
@@ -54,9 +60,12 @@ export interface SearchResponse {
   /** This page's releases only. */
   releases: Release[];
   /**
-   * Tracks for the releases on this page, already filtered to `language`. A release with
-   * nothing in that language is still listed in `expanded` with no tracks here — the
-   * client has to tell "empty" from "not fetched".
+   * Tracks for the releases on this page, already filtered to `languages` and ordered by
+   * it — a release's track in the first language comes before its track in the second.
+   *
+   * A release with nothing in any requested language is still listed in `expanded` with no
+   * tracks here: the client has to tell "empty" from "not fetched". Group by
+   * `track.releaseId`, and within a release tell them apart by `track.code`.
    */
   tracks: Track[];
   /** Ids of the releases `tracks` covers. */

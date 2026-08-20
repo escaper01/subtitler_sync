@@ -91,15 +91,41 @@ export function parseQuery(raw: string | null): string | null {
 }
 
 /**
- * Parse `?lang=en`.
+ * How many languages one request may ask for.
  *
- * Exactly one language, and it must be one we actually offer. Rejected rather than
- * ignored: an unknown code silently filtering everything away is indistinguishable from
- * "this film has no subtitles", which is a far more confusing thing to debug than a 400.
+ * Two, because the extension shows at most two subtitle tracks at once. The bound is about
+ * the response, not the upstream: a release page is fetched once and already contains every
+ * language, so asking for more costs subtitlecat nothing — but five releases times a
+ * hundred and fifty machine translations is a large body to send for no reason.
  */
-export function parseLanguage(raw: string | null): string | null {
-  const value = (raw ?? '').trim();
-  return isKnownLanguage(value) ? value : null;
+export const MAX_LANGUAGES = 2;
+
+/**
+ * Parse `?lang=en` or `?lang=en,de`.
+ *
+ * One or two languages, each one we actually offer, **in the order asked for** — the
+ * caller's first language is their primary track, and the response preserves that so the
+ * client does not have to re-sort what it already told us.
+ *
+ * An unknown code is rejected rather than ignored: silently filtering everything away is
+ * indistinguishable from "this film has no subtitles", which is a far more confusing thing
+ * to debug than a 400. Duplicates are collapsed rather than refused — `en,en` is a clumsy
+ * way of saying `en`, not an error.
+ */
+export function parseLanguages(raw: string | null): string[] | null {
+  const parts = (raw ?? '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  if (parts.length === 0 || parts.length > MAX_LANGUAGES) return null;
+
+  const out: string[] = [];
+  for (const part of parts) {
+    if (!isKnownLanguage(part)) return null;
+    if (!out.includes(part)) out.push(part);
+  }
+  return out;
 }
 
 /** Parse `?page=2`. 1-based; anything unusable is page 1. */

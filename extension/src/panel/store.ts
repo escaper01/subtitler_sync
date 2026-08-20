@@ -67,18 +67,6 @@ export interface FindState {
   tracks: Record<string, Track[] | undefined>;
   /** Ids the user opened that we are still fetching. */
   expanding: string[];
-  /**
-   * Tracks per release in the **second** language, fetched one release at a time.
-   *
-   * Deliberately not filled in by the search. Expanding all five results in a second
-   * language would double the upstream work of every page, and the release/download
-   * allowance is only three times the search one — a page of five would spend it inside
-   * an hour. So this is populated by `loadReleaseInto`, for the one release the user
-   * actually asked about.
-   */
-  tracks2: Record<string, Track[] | undefined>;
-  /** Release id whose second-language lookup is in flight. */
-  fetchingSecond: string | null;
   /** `releaseId/code` of the track currently downloading. */
   loading: string | null;
   /** Which slot that download is bound for, so the right button shows the spinner. */
@@ -97,8 +85,6 @@ const EMPTY_FIND: FindState = {
   releases: [],
   tracks: {},
   expanding: [],
-  tracks2: {},
-  fetchingSecond: null,
   loading: null,
   loadingSlot: null,
 };
@@ -175,8 +161,6 @@ export interface PanelState {
   toggleRelease: (release: Release) => Promise<void>;
   /** Download a track and put it in a slot. Defaults to whichever slot is selected. */
   loadTrack: (track: Track, slot?: SlotId) => Promise<void>;
-  /** Fetch one release in the second language and load it into the secondary slot. */
-  loadReleaseInto: (release: Release, slot: SlotId) => Promise<void>;
 
   setClickMode: (mode: ClickMode) => void;
   /** The one place a new timing reaches the overlay, the slots and storage. */
@@ -251,6 +235,27 @@ function persist(slots: Slots): void {
  */
 function activeId(state: { activeSlot: SlotId; dual: DualLayout }): SlotId {
   return state.dual.enabled ? state.activeSlot : 0;
+}
+
+/**
+ * The `lang` parameter for a search or an expansion.
+ *
+ * One code normally, two when dual subtitles are on and the languages differ. **Asking for
+ * both in one request is not an optimisation, it is the correct shape**: the server fetches
+ * a release page once and it already contains every language, so a second request per
+ * release would spend a rate-limit token to re-filter data the first response could have
+ * carried.
+ *
+ * The primary goes first, and the server preserves that order — so each release's tracks
+ * arrive with the primary language's first.
+ */
+function searchLangParam(state: {
+  language: string;
+  language2: string;
+  dual: DualLayout;
+}): string {
+  const { language, language2, dual } = state;
+  return dual.enabled && language2 !== language ? `${language},${language2}` : language;
 }
 
 /** The active slot's timing. */
@@ -454,10 +459,11 @@ export const usePanel = create<PanelState>((set, get) => ({
     set({ language2: code });
     void saveLanguage2(code);
 
-    // Anything already fetched was fetched in the old language, so it is now a lie. The
-    // primary results are untouched — only the second-language column is discarded, and it
-    // refetches per release on demand anyway.
-    set({ find: { ...get().find, tracks2: {} } });
+    // Every track on screen was filtered to the old pair, so the results are now a lie.
+    // Re-run rather than clear, exactly as `setLanguage` does: the query has not changed
+    // and both the search and every release page are cached upstream, so this costs
+    // nothing beyond the round trip.
+    if (get().dual.enabled && get().find.status === 'done') void get().runSearch(get().find.page);
   },
 
   setQuery(query) {
@@ -465,7 +471,7 @@ export const usePanel = create<PanelState>((set, get) => ({
   },
 
   async runSearch(page = 1) {
-    const { find, language } = get();
+    const { find } = get();
     const query = find.query.trim();
     if (query.length === 0 || find.status === 'searching') return;
 
@@ -476,7 +482,7 @@ export const usePanel = create<PanelState>((set, get) => ({
     const result = await askBackground<ApiResult<SearchResponse>>({
       kind: 'api:search',
       query,
-      lang: language,
+      lang: searchLangParam(get()),
       page,
     });
 
@@ -520,7 +526,7 @@ export const usePanel = create<PanelState>((set, get) => ({
 
     log.info('find', 'search done', {
       query,
-      language,
+      languages: result.data.languages,
       page: result.data.page,
       of: result.data.total,
       releases: result.data.releases.length,
@@ -539,7 +545,7 @@ export const usePanel = create<PanelState>((set, get) => ({
     const result = await askBackground<ApiResult<ReleaseResponse>>({
       kind: 'api:release',
       path: release.path,
-      lang: get().language,
+      lang: searchLangParam(get()),
     });
 
     const done = get().find;
@@ -642,77 +648,6 @@ export const usePanel = create<PanelState>((set, get) => ({
       set({ find: { ...get().find, loading: null, loadingSlot: null }, error: message });
       log.warn('find', 'fetched subtitle failed to parse', message);
     }
-  },
-
-  /**
-   * Fetch one release in the second language, and load it into a slot.
-   *
-   * The pairing this whole feature exists for: you have already picked a release for the
-   * primary, and the *same* release in another language is the one most likely to share
-   * its timing — so the second track often needs no syncing at all once the first is
-   * aligned.
-   *
-   * One request, for one release, when the button is pressed. Expanding every result in a
-   * second language would double the upstream cost of every search, and the release
-   * allowance is only three times the search one.
-   */
-  async loadReleaseInto(release, slot) {
-    const { language2, find } = get();
-    if (find.fetchingSecond || find.loading) return;
-
-    // Already looked up: skip straight to the download.
-    const cached = find.tracks2[release.id];
-    if (cached !== undefined) {
-      const first = cached[0];
-      if (!first) {
-        set({ find: { ...get().find, error: `Not available in that language.` } });
-        return;
-      }
-      await get().loadTrack(first, slot);
-      return;
-    }
-
-    set({ find: { ...find, fetchingSecond: release.id, error: null }, error: null });
-
-    const result = await askBackground<ApiResult<ReleaseResponse>>({
-      kind: 'api:release',
-      path: release.path,
-      lang: language2,
-    });
-
-    const done = get().find;
-
-    if (!result || !result.ok) {
-      set({
-        find: {
-          ...done,
-          fetchingSecond: null,
-          error: result?.ok === false ? result.error : 'Could not open that release.',
-          code: result?.ok === false ? (result.code ?? null) : null,
-          action: result?.ok === false ? (result.action ?? null) : null,
-        },
-      });
-      return;
-    }
-
-    const tracks = result.data.tracks;
-    set({
-      find: {
-        ...done,
-        fetchingSecond: null,
-        // Cached even when empty, so a release with nothing in that language is not
-        // refetched every time the user presses the button again.
-        tracks2: { ...done.tracks2, [release.id]: tracks },
-      },
-    });
-
-    const first = tracks[0];
-    if (!first) {
-      set({ find: { ...get().find, error: 'This release has nothing in that language.' } });
-      return;
-    }
-
-    await get().loadTrack(first, slot);
   },
 
   /* -------------------------------------------------------------------- sync */

@@ -1,14 +1,14 @@
-import { denied, fail, fromError, json, parseLanguage, parsePath, preflight } from '@/lib/api';
+import { denied, fail, fromError, json, parseLanguages, parsePath, preflight } from '@/lib/api';
 import { checkFetchLimits } from '@/lib/rateLimit';
-import { filterByLanguage, releaseTracks } from '@/lib/subtitlecat';
+import { filterByLanguages, releaseTracks } from '@/lib/subtitlecat';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * `GET /api/release?path=subs/45/Some.Release.html&lang=en`
+ * `GET /api/release?path=subs/45/Some.Release.html&lang=en` (or `lang=en,de`)
  *
- * One release's subtitle in one language. Search expands every release on the page, so
+ * One release's subtitles, in one or two languages. Search expands every release on the page, so
  * this is only reached when a client asks for a release directly.
  *
  * Rate-limited as well as search, for the same reason it used to be gated as well as
@@ -21,8 +21,8 @@ export async function GET(request: Request): Promise<Response> {
   const path = parsePath(params.get('path'));
   if (!path) return fail('Which release?', 400);
 
-  const language = parseLanguage(params.get('lang'));
-  if (!language) return fail('Pick a supported language', 400);
+  const languages = parseLanguages(params.get('lang'));
+  if (!languages) return fail('Pick one or two supported languages', 400);
 
   const limit = await checkFetchLimits(request);
   if (!limit.allowed) {
@@ -31,7 +31,7 @@ export async function GET(request: Request): Promise<Response> {
 
   try {
     const release = await releaseTracks(path);
-    return json({ ...release, tracks: filterByLanguage(release.tracks, language) });
+    return json({ ...release, tracks: filterByLanguages(release.tracks, languages) });
   } catch (err) {
     return fromError(err);
   }
