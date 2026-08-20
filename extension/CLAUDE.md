@@ -337,16 +337,26 @@ search. See below.
 
 ### Loading a pair
 
-With dual subtitles on, the search asks for **both languages in one request** —
-`lang=en,de` — and every result row offers both slots:
+**The checkbox lives on the Find tab, not just the File tab.** `dual.enabled` is one field
+in the store, and both checkboxes read and write it — checking either flips both — but a
+control that only exists on a tab someone has no reason to visit while searching is not
+discoverable. `FindTab`'s own toggle is what makes "search two languages" findable from the
+one place a person is actually looking for it, and turning it on re-runs an already-finished
+search when the two languages differ, so an existing result list does not sit there showing
+an empty second column until the next search.
 
-- Each release's tracks arrive already grouped and **ordered by the requested languages**,
-  so the primary language's track is the row on top.
-- Tracks get **1st / 2nd** buttons instead of one *Use*. `loadTrack` takes an explicit
-  slot, and the Find tab always passes one — "load this as the second subtitle" must not
-  depend on having remembered to flip the selector at the top of a scrolled panel.
-- A release that has one language but not the other says which is missing. One row where
-  two were expected otherwise looks like the second picker was ignored.
+With it on, the search asks for **both languages in one request** — `lang=en,de` — and
+results render as **two columns per release**, one per language, rather than a flat list of
+tracks:
+
+- Each column shows that release's track in that language, or a plain "Not available" if it
+  has none — which is the common case for anything but the most popular releases, and
+  reading it off the column is clearer than a row disappearing from a flat list would be.
+- Each column's button loads directly into that column's slot. There is no separate
+  selector to line up first: column 1 is always slot 0, column 2 is always slot 1.
+- The columns only appear when the two languages actually differ (`language2 !== language`)
+  — with dual on but both languages equal, the search itself collapses to one language (see
+  `searchLangParam` below), and two identical columns would be worse than the plain list.
 
 **Asking for both in one request is the correct shape, not an optimisation.** The server
 fetches a release page once and it already contains every language — `filterByLanguages` is

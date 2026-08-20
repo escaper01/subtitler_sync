@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import type { Release } from '@/lib/api-types';
+import type { Release, Track } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/api-types';
+import type { SlotId } from '@/types';
 import { usePanel, trackKey } from '@/panel/store';
 import { languageName } from '@/lib/languages';
 import { Button, TextInput } from '@/panel/components/ui';
@@ -14,9 +15,9 @@ const MAX_QUERY_LENGTH = 100;
  * Search subtitlecat for a track instead of supplying one.
  *
  * The shape follows what the search actually returns: a list of *releases* (someone's
- * upload, named after the video file it was timed against), each holding one subtitle in
- * the chosen language. Five per page, all expanded, so taking the top one is a single
- * click after the search.
+ * upload, named after the video file it was timed against), each holding one subtitle per
+ * language. Five per page, all expanded, so taking the top one is a single click after the
+ * search.
  *
  * Picking a release by its filename is not cosmetic: a track timed against the same rip
  * you are watching needs no syncing at all.
@@ -28,16 +29,53 @@ export function FindTab() {
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
   const dual = usePanel((s) => s.dual);
+  const setDual = usePanel((s) => s.setDual);
   const language2 = usePanel((s) => s.language2);
   const setLanguage2 = usePanel((s) => s.setLanguage2);
 
   const searching = find.status === 'searching';
+
+  /**
+   * The control that was missing before. `dual.enabled` also lives on the File tab's
+   * "Two subtitles at once" checkbox — they read and write the same store field, so
+   * checking either one flips both. But a control that exists only on a tab someone has no
+   * reason to visit while searching is not discoverable: you find it here, where you are
+   * looking for a second language, or you do not find it.
+   *
+   * Turning it on also re-runs an already-completed search when the two languages differ —
+   * the results on screen were fetched for one language, and would otherwise show an empty
+   * second column until the next search.
+   */
+  const onToggleDual = (enabled: boolean) => {
+    setDual({ enabled });
+    if (enabled && language2 !== language && find.status === 'done') {
+      void runSearch(find.page);
+    }
+  };
 
   return (
     <div className="space-y-2.5">
       {/* Above the query box, because the point of it is to fill that box in. TV only —
           TVmaze has no films, so for a film the box below is still typed into directly. */}
       <SeriesBrowser />
+
+      <label className="flex cursor-pointer items-start gap-2 rounded border border-white/10 bg-black/20 px-2.5 py-2">
+        <input
+          type="checkbox"
+          checked={dual.enabled}
+          onChange={(e) => onToggleDual(e.target.checked)}
+          className="mt-0.5 h-3.5 w-3.5 accent-sky-500"
+        />
+        <span className="flex-1">
+          <span className="block text-[11px] font-medium text-white/85">
+            Search two languages at once
+          </span>
+          <span className="mt-0.5 block text-[10px] leading-relaxed text-white/40">
+            Results split into two columns, one per language, so you pick both from the same
+            release in one pass.
+          </span>
+        </span>
+      </label>
 
       <div className="flex gap-1.5">
         <TextInput
@@ -51,9 +89,9 @@ export function FindTab() {
         <LanguagePicker selected={language} onChange={setLanguage} />
       </div>
 
-      {/* The second language sits below the search box rather than beside it, because it
-          is not part of the query: the search runs in the first language and the second is
-          fetched per release, on demand. Pairing them in one row would suggest otherwise. */}
+      {/* The second language sits below the search box rather than beside it: both
+          languages are fetched in the one search, but this is still "the second track",
+          not "another term to search for". */}
       {dual.enabled && (
         <div className="flex items-center gap-1.5 rounded border border-white/10 bg-black/20 px-2 py-1">
           <span className="text-[10px] text-white/45">Second subtitle</span>
@@ -65,8 +103,8 @@ export function FindTab() {
 
       {dual.enabled && language2 === language && (
         <p className="text-[10px] leading-relaxed text-white/35">
-          Both tracks are set to {languageName(language)}. Pick a different second language
-          to load a pair.
+          Both are set to {languageName(language)}. Pick a different second language to see
+          two columns.
         </p>
       )}
 
@@ -200,7 +238,6 @@ function Results() {
 function ReleaseRow({ release }: { release: Release }) {
   const find = usePanel((s) => s.find);
   const toggleRelease = usePanel((s) => s.toggleRelease);
-  const loadTrack = usePanel((s) => s.loadTrack);
   const dual = usePanel((s) => s.dual);
   const language = usePanel((s) => s.language);
   const language2 = usePanel((s) => s.language2);
@@ -210,11 +247,10 @@ function ReleaseRow({ release }: { release: Release }) {
   const [open, setOpen] = useState(tracks !== undefined);
   const busy = find.expanding.includes(release.id);
 
-  // Which of the languages we asked for this release turned out not to have. Worth saying:
-  // one row where two were expected otherwise looks like the second picker was ignored.
-  const asked = dual.enabled && language2 !== language ? [language, language2] : [language];
-  const got = new Set((tracks ?? []).map((track) => track.code.toLowerCase()));
-  const absent = tracks === undefined ? [] : asked.filter((code) => !got.has(code.toLowerCase()));
+  // Two columns only when two languages were actually searched for. With dual on but the
+  // two languages left equal, the search itself collapses to one language (see
+  // searchLangParam in the store) — rendering two identical columns would be worse than one.
+  const twoLangs = dual.enabled && language2 !== language;
 
   const onToggle = (): void => {
     setOpen(!open);
@@ -247,66 +283,120 @@ function ReleaseRow({ release }: { release: Release }) {
 
           {!busy && tracks !== undefined && tracks.length === 0 && (
             <p className="py-1 text-[10px] text-white/35">
-              Not available in {asked.length > 1 ? 'either language' : 'this language'}.
+              Not available in {twoLangs ? 'either language' : 'this language'}.
             </p>
           )}
 
           {!busy &&
-            tracks?.map((track) => {
-              const loading = find.loading === trackKey(track);
-              return (
-                <div key={track.code} className="flex items-center gap-2 py-0.5">
-                  <span className="min-w-0 flex-1 truncate text-[11px] text-white/70">
-                    {track.name}
-                  </span>
-
-                  {/* One button becomes two once there are two slots. An explicit target
-                      beats "wherever the selector happens to point" — the selector is at
-                      the top of the panel and this is the bottom of a scrolled list. */}
-                  {dual.enabled ? (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Load as the first subtitle"
-                        onClick={() => void loadTrack(track, 0)}
-                        disabled={find.loading !== null}
-                      >
-                        {loading && find.loadingSlot === 0 ? '…' : '1st'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        title="Load as the second subtitle"
-                        onClick={() => void loadTrack(track, 1)}
-                        disabled={find.loading !== null}
-                      >
-                        {loading && find.loadingSlot === 1 ? '…' : '2nd'}
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => void loadTrack(track)}
-                      disabled={find.loading !== null}
-                    >
-                      {loading ? 'Loading…' : 'Use'}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-
-          {/* Only when *some* tracks came back — a release with none already says so above,
-              and repeating it per language would be two messages for one fact. */}
-          {!busy && tracks !== undefined && tracks.length > 0 && absent.length > 0 && (
-            <p className="pt-0.5 text-[10px] text-white/30">
-              No {absent.map((code) => languageName(code)).join(' or ')} for this release.
-            </p>
-          )}
+            tracks !== undefined &&
+            tracks.length > 0 &&
+            (twoLangs ? (
+              // The visual split: one release, its track in each language, side by side.
+              // The API returns at most one track per language per release, so this is
+              // never more than two boxes.
+              <div className="grid grid-cols-2 gap-1.5">
+                <LanguageColumn
+                  label="1st"
+                  code={language}
+                  track={findTrack(tracks, language)}
+                  slot={0}
+                />
+                <LanguageColumn
+                  label="2nd"
+                  code={language2}
+                  track={findTrack(tracks, language2)}
+                  slot={1}
+                />
+              </div>
+            ) : (
+              <SingleLanguageList tracks={tracks} />
+            ))}
         </div>
       )}
     </li>
+  );
+}
+
+function findTrack(tracks: readonly Track[], code: string): Track | null {
+  const wanted = code.toLowerCase();
+  return tracks.find((track) => track.code.toLowerCase() === wanted) ?? null;
+}
+
+/** One release, one language: the track if the release has it, or a plain "not available". */
+function LanguageColumn({
+  label,
+  code,
+  track,
+  slot,
+}: {
+  label: string;
+  code: string;
+  track: Track | null;
+  slot: SlotId;
+}) {
+  const find = usePanel((s) => s.find);
+  const loadTrack = usePanel((s) => s.loadTrack);
+
+  const loading =
+    track !== null && find.loading === trackKey(track) && find.loadingSlot === slot;
+
+  return (
+    <div className="rounded border border-white/5 bg-black/20 px-1.5 py-1">
+      <div
+        className="truncate text-[9px] uppercase tracking-wide text-white/35"
+        title={languageName(code)}
+      >
+        {label} · {languageName(code)}
+      </div>
+
+      {track ? (
+        <>
+          <div className="mt-0.5 truncate text-[10px] text-white/70" title={track.name}>
+            {track.name}
+          </div>
+          <div className="mt-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void loadTrack(track, slot)}
+              disabled={find.loading !== null}
+            >
+              {loading ? 'Loading…' : `Load as ${label.toLowerCase()}`}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <p className="mt-0.5 text-[10px] text-white/25">Not available</p>
+      )}
+    </div>
+  );
+}
+
+/** The single-language case: exactly the flat list this tab always had. */
+function SingleLanguageList({ tracks }: { tracks: readonly Track[] }) {
+  const find = usePanel((s) => s.find);
+  const loadTrack = usePanel((s) => s.loadTrack);
+
+  return (
+    <>
+      {tracks.map((track) => {
+        const loading = find.loading === trackKey(track);
+        return (
+          <div key={track.code} className="flex items-center gap-2 py-0.5">
+            <span className="min-w-0 flex-1 truncate text-[11px] text-white/70">
+              {track.name}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => void loadTrack(track)}
+              disabled={find.loading !== null}
+            >
+              {loading ? 'Loading…' : 'Use'}
+            </Button>
+          </div>
+        );
+      })}
+    </>
   );
 }
