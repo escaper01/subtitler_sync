@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { SubtitleOverlay } from '@/content/overlay';
-import { usePanel } from '@/panel/store';
+import { selectSync, selectTrack, usePanel } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
 import { toCueTime } from '@/lib/sync';
 import { Banner, clock } from '@/panel/components/ui';
@@ -10,6 +10,7 @@ import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
 import { SitesTab } from '@/panel/components/SitesTab';
 import { PanelBanner } from '@/panel/components/PanelBanner';
+import { SlotSelector } from '@/panel/components/SlotSelector';
 
 /** How often the panel samples playback position. Enough for a smooth highlight. */
 const TICK_MS = 120;
@@ -47,7 +48,7 @@ export function App({ video, overlay }: { video: HTMLVideoElement; overlay: Subt
 
 function Handle() {
   const setOpen = usePanel((s) => s.setOpen);
-  const track = usePanel((s) => s.track);
+  const track = usePanel(selectTrack);
 
   return (
     <button
@@ -151,6 +152,8 @@ function Panel() {
         ))}
       </nav>
 
+      <SlotSelector />
+
       <div className="flex-1 overflow-y-auto p-2.5">
         <PanelBanner />
 
@@ -191,8 +194,8 @@ function Panel() {
  */
 function useHotkeys() {
   const open = usePanel((s) => s.open);
-  const track = usePanel((s) => s.track);
-  const sync = usePanel((s) => s.sync);
+  const track = usePanel(selectTrack);
+  const sync = usePanel(selectSync);
   const nudge = usePanel((s) => s.nudge);
   const syncToCue = usePanel((s) => s.syncToCue);
   const setOpen = usePanel((s) => s.setOpen);

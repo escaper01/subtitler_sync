@@ -1,24 +1,29 @@
 import { create } from 'zustand';
-import type { Cue, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
-import { IDENTITY_SYNC } from '@/types';
+import type { Cue, DualLayout, SlotId, SubtitleStyle, SyncState } from '@/types';
+import { DEFAULT_DUAL_LAYOUT, IDENTITY_SYNC } from '@/types';
 import type { ApiErrorCode, Release, ReleaseResponse, SearchResponse, Track } from '@/lib/api-types';
 import type { ApiResult } from '@/lib/api';
 import type { SubtitleOverlay } from '@/content/overlay';
+import type { SubtitleTrack, TrackSlot } from '@/types';
 import { parseSubtitleFile, parseSubtitleText, SubtitleParseError } from '@/lib/subtitles/parse';
-import { clampStyle, DEFAULT_STYLE } from '@/lib/style';
+import { clampStyle, DEFAULT_STYLE, defaultSecondaryStyle } from '@/lib/style';
+import type { Slots } from '@/lib/slots';
+import { clearSlot, emptySlots, loadIntoSlot, setSlotSync, withSlot } from '@/lib/slots';
 import { askBackground } from '@/lib/messaging';
 import { guessSearchTitle } from '@/lib/searchTitle';
 import { DEFAULT_LANGUAGE } from '@/lib/languages';
 import {
   DEFAULT_PANEL_PREFS,
+  loadDual,
   loadLanguage,
   loadMovie,
   loadPanelPrefs,
-  loadStyle,
+  loadStyles,
+  saveDual,
   saveLanguage,
   saveMovie,
   savePanelPrefs,
-  saveStyle,
+  saveStyles,
   type PanelPrefs,
 } from '@/lib/storage';
 import { makeAnchor, nudge as nudgeSync, onePointFit, resetSync, twoPointFit } from '@/lib/sync';
@@ -86,13 +91,28 @@ interface Bridge {
   overlay: SubtitleOverlay;
 }
 
-interface PanelState {
+export interface PanelState {
   bridge: Bridge | null;
   ready: boolean;
 
-  track: SubtitleTrack | null;
-  sync: SyncState;
-  style: SubtitleStyle;
+  /**
+   * The two subtitle tracks, each with its own timing.
+   *
+   * `slots[0]` is the primary and is the only one that renders while `dual.enabled` is
+   * false — so the single-track case is unchanged, which is most of them.
+   */
+  slots: Slots;
+  /**
+   * Which slot the File, Find, Sync and Style tabs act on.
+   *
+   * One selector for all four rather than one each: "I am working on the second subtitle"
+   * is a single thought, and four independent toggles would make it four.
+   *
+   * Session state, never persisted — you always come back to the primary.
+   */
+  activeSlot: SlotId;
+  styles: [SubtitleStyle, SubtitleStyle];
+  dual: DualLayout;
   prefs: PanelPrefs;
   /** The subtitle language search results are filtered to. */
   language: string;
@@ -114,6 +134,9 @@ interface PanelState {
 
   loadFile: (file: File) => Promise<void>;
   clearTrack: () => void;
+  setActiveSlot: (id: SlotId) => void;
+  setDual: (patch: Partial<DualLayout>) => void;
+  setSlotVisible: (id: SlotId, visible: boolean) => void;
 
   setLanguage: (code: string) => void;
   setQuery: (query: string) => void;
@@ -122,6 +145,8 @@ interface PanelState {
   loadTrack: (track: Track) => Promise<void>;
 
   setClickMode: (mode: ClickMode) => void;
+  /** The one place a new timing reaches the overlay, the slots and storage. */
+  applySync: (next: SyncState, notice: string | null) => void;
   syncToCue: (cue: Cue) => void;
   setAnchor: (slot: 0 | 1, cue: Cue) => void;
   clearAnchors: () => void;
@@ -132,6 +157,7 @@ interface PanelState {
 
   setStyle: (patch: Partial<SubtitleStyle>) => void;
   replaceStyle: (style: SubtitleStyle) => void;
+  resetSecondaryStyle: () => void;
 
   setPrefs: (patch: Partial<PanelPrefs>) => void;
   setOpen: (open: boolean) => void;
@@ -153,21 +179,72 @@ function debounce<A extends unknown[]>(fn: (...args: A) => void, ms: number) {
   };
 }
 
-const persistStyle = debounce((style: SubtitleStyle) => void saveStyle(style), 400);
+const persistStyles = debounce(
+  (styles: [SubtitleStyle, SubtitleStyle]) => void saveStyles(styles),
+  400,
+);
+const persistDual = debounce((layout: DualLayout) => void saveDual(layout), 400);
 const persistPrefs = debounce((prefs: PanelPrefs) => void savePanelPrefs(prefs), 400);
+
+/**
+ * Both slots are written together.
+ *
+ * One record per film, not one per slot: they are read together, evicted together, and a
+ * half-written pair would restore a primary against somebody else's secondary.
+ */
 const persistMovie = debounce(
-  (key: string, sync: SyncState, track: SubtitleTrack | null) =>
-    void saveMovie(key, { sync, track, updatedAt: Date.now() }),
+  (key: string, slots: Slots) =>
+    void saveMovie(key, {
+      slots: [
+        { track: slots[0].track, sync: slots[0].sync },
+        { track: slots[1].track, sync: slots[1].sync },
+      ],
+      updatedAt: Date.now(),
+    }),
   600,
 );
+
+/** Save whatever the slots currently are. Every timing action ends with this. */
+function persist(slots: Slots): void {
+  persistMovie(videoKey(), slots);
+}
+
+/**
+ * The slot the panel's controls address.
+ *
+ * Forced to the primary while dual mode is off, so a stale `activeSlot` left over from a
+ * previous session cannot point every control at a track that is not rendering.
+ */
+function activeId(state: { activeSlot: SlotId; dual: DualLayout }): SlotId {
+  return state.dual.enabled ? state.activeSlot : 0;
+}
+
+/** The active slot's timing. */
+function activeSync(state: { activeSlot: SlotId; dual: DualLayout; slots: Slots }): SyncState {
+  return state.slots[activeId(state)].sync;
+}
+
+/**
+ * Selectors for "whatever the panel is currently pointed at".
+ *
+ * Exported so no component re-derives it. `activeId` folds in the dual-off case, and a
+ * component doing `s.slots[s.activeSlot]` by hand would miss that and render the secondary's
+ * state while the primary is the one on screen.
+ */
+export const selectSlot = (s: PanelState): TrackSlot => s.slots[activeId(s)];
+export const selectTrack = (s: PanelState): SubtitleTrack | null => selectSlot(s).track;
+export const selectSync = (s: PanelState): SyncState => selectSlot(s).sync;
+export const selectStyle = (s: PanelState): SubtitleStyle => s.styles[activeId(s)];
+export const selectSlotId = (s: PanelState): SlotId => activeId(s);
 
 export const usePanel = create<PanelState>((set, get) => ({
   bridge: null,
   ready: false,
 
-  track: null,
-  sync: IDENTITY_SYNC,
-  style: DEFAULT_STYLE,
+  slots: emptySlots(),
+  activeSlot: 0,
+  styles: [DEFAULT_STYLE, defaultSecondaryStyle(DEFAULT_STYLE)],
+  dual: DEFAULT_DUAL_LAYOUT,
   prefs: DEFAULT_PANEL_PREFS,
   language: DEFAULT_LANGUAGE,
   find: EMPTY_FIND,
@@ -185,38 +262,57 @@ export const usePanel = create<PanelState>((set, get) => ({
   async init(bridge) {
     set({ bridge });
 
-    const [style, prefs, movie, language, pageTitle] = await Promise.all([
-      loadStyle(),
+    const [styles, dual, prefs, movie, language, pageTitle] = await Promise.all([
+      loadStyles(),
+      loadDual(),
       loadPanelPrefs(),
       loadMovie(videoKey()),
       loadLanguage(),
       askBackground<string | null>({ kind: 'get-page-title' }),
     ]);
 
-    bridge.overlay.setStyle(style);
-    if (movie?.track) bridge.overlay.setTrack(movie.track);
-    if (movie?.sync) bridge.overlay.setSync(movie.sync);
+    // A saved film restores its track *and* its timing together — the one case where a
+    // sync that was not fitted against the track now being loaded is still correct,
+    // because it is the same track it was fitted against.
+    const slots: Slots = emptySlots();
+    for (const id of [0, 1] as const) {
+      const saved = movie?.slots[id];
+      if (!saved) continue;
+      slots[id] = { track: saved.track, sync: saved.sync, visible: true };
+    }
+
+    bridge.overlay.setStyles(styles, dual);
+    for (const id of [0, 1] as const) {
+      bridge.overlay.setTrack(id, slots[id].track);
+      bridge.overlay.setSync(id, slots[id].sync);
+    }
+
+    const restored = slots.filter((slot) => slot.track !== null).map((slot) => slot.track);
 
     set({
-      style,
+      styles,
+      dual,
       prefs,
       language,
       // Seeded, not searched: the guess is often right but sometimes comically wrong, and
       // firing a request off the back of a wrong guess wastes everyone's time.
       find: { ...EMPTY_FIND, query: guessSearchTitle(pageTitle) },
-      track: movie?.track ?? null,
-      sync: movie?.sync ?? IDENTITY_SYNC,
+      slots,
       ready: true,
       // Auto-open the first time we see a film, but stay out of the way on a rewatch
       // where the subtitles are already loaded and timed.
-      open: !movie?.track,
-      notice: movie?.track ? `Restored "${movie.track.name}" for this video.` : null,
+      open: restored.length === 0,
+      notice:
+        restored.length === 0
+          ? null
+          : restored.length === 1
+            ? `Restored "${restored[0]?.name}" for this video.`
+            : `Restored both subtitle tracks for this video.`,
     });
 
-    if (movie?.track) {
+    if (restored.length > 0) {
       log.info('panel', 'restored saved subtitles', {
-        name: movie.track.name,
-        cues: movie.track.cues.length,
+        tracks: restored.map((track) => `${track?.name} (${track?.cues.length} cues)`),
       });
     }
   },
@@ -230,19 +326,27 @@ export const usePanel = create<PanelState>((set, get) => ({
   },
 
   async loadFile(file) {
+    const id = activeId(get());
     set({ error: null, notice: null });
     try {
       const track = await parseSubtitleFile(file);
-      get().bridge?.overlay.setTrack(track);
+      get().bridge?.overlay.setTrack(id, track);
+      // A fresh file starts from identity — an offset fitted against a different file is
+      // not a head start, it is a wrong answer that looks deliberate.
+      get().bridge?.overlay.setSync(id, IDENTITY_SYNC);
 
+      const where = get().dual.enabled ? ` as the ${id === 0 ? 'primary' : 'secondary'}` : '';
       const notice =
         track.warnings.length > 0
-          ? `Loaded ${track.cues.length} lines with ${track.warnings.length} warning(s).`
-          : `Loaded ${track.cues.length} lines.`;
+          ? `Loaded ${track.cues.length} lines${where}, with ${track.warnings.length} warning(s).`
+          : `Loaded ${track.cues.length} lines${where}.`;
 
-      set({ track, notice, prefs: { ...get().prefs, tab: 'sync' } });
-      persistMovie(videoKey(), get().sync, track);
+      const slots = loadIntoSlot(get().slots, id, track);
+      set({ slots, notice, prefs: { ...get().prefs, tab: 'sync' } });
+      persist(slots);
+
       log.info('panel', 'subtitles loaded', {
+        slot: id,
         name: track.name,
         cues: track.cues.length,
         format: track.format,
@@ -254,15 +358,41 @@ export const usePanel = create<PanelState>((set, get) => ({
         err instanceof SubtitleParseError
           ? err.message
           : `Could not read "${file.name}". ${err instanceof Error ? err.message : ''}`;
-      set({ error: message, track: null });
+      // The slot keeps whatever it had. A failed read is not a reason to throw away a
+      // track that is working.
+      set({ error: message });
       log.warn('panel', 'subtitle load failed', message);
     }
   },
 
   clearTrack() {
-    get().bridge?.overlay.setTrack(null);
-    set({ track: null, notice: null, error: null });
-    persistMovie(videoKey(), get().sync, null);
+    const id = activeId(get());
+    get().bridge?.overlay.setTrack(id, null);
+    get().bridge?.overlay.setSync(id, IDENTITY_SYNC);
+
+    const slots = clearSlot(get().slots, id);
+    set({ slots, notice: null, error: null });
+    persist(slots);
+  },
+
+  setActiveSlot(id) {
+    set({ activeSlot: id, error: null, notice: null });
+  },
+
+  setDual(patch) {
+    const dual = { ...get().dual, ...patch };
+    get().bridge?.overlay.setStyles(get().styles, dual);
+
+    // Switching dual off leaves the secondary's track and timing alone but stops it being
+    // addressable — otherwise the panel would sit on a slot that is not rendering, and
+    // every control would appear to do nothing.
+    set({ dual, activeSlot: dual.enabled ? get().activeSlot : 0 });
+    persistDual(dual);
+  },
+
+  setSlotVisible(id, visible) {
+    get().bridge?.overlay.setSlotVisible(id, visible);
+    set({ slots: withSlot(get().slots, id, { visible }) });
   },
 
   /* ------------------------------------------------------------------ search */
@@ -416,20 +546,24 @@ export const usePanel = create<PanelState>((set, get) => ({
     }
 
     try {
+      const id = activeId(get());
       const parsed = parseSubtitleText(result.data.text, result.data.filename);
-      get().bridge?.overlay.setTrack(parsed);
+      get().bridge?.overlay.setTrack(id, parsed);
+      get().bridge?.overlay.setSync(id, IDENTITY_SYNC);
 
+      const slots = loadIntoSlot(get().slots, id, parsed);
       set({
-        track: parsed,
+        slots,
         find: { ...get().find, loading: null },
         notice: `Loaded ${parsed.cues.length} lines in ${track.name}.`,
         // Straight to Sync: a fetched track is timed against some other release, so it is
         // more likely to need aligning than a file the user picked deliberately.
         prefs: { ...get().prefs, tab: 'sync' },
       });
-      persistMovie(videoKey(), get().sync, parsed);
+      persist(slots);
 
       log.info('find', 'loaded fetched subtitles', {
+        slot: id,
         language: track.code,
         cues: parsed.cues.length,
         name: parsed.name,
@@ -450,8 +584,24 @@ export const usePanel = create<PanelState>((set, get) => ({
     set({ clickMode: mode });
   },
 
+  /**
+   * Apply a new timing to the active slot.
+   *
+   * Every sync action funnels through here, so "which track am I adjusting" is answered
+   * once. The other slot is untouched, which is the whole point of per-slot timing: two
+   * tracks for one film are almost never cut from the same release.
+   */
+  applySync(next: SyncState, notice: string | null) {
+    const id = activeId(get());
+    get().bridge?.overlay.setSync(id, next);
+
+    const slots = setSlotSync(get().slots, id, next);
+    set({ slots, error: null, ...(notice === null ? {} : { notice }) });
+    persist(slots);
+  },
+
   syncToCue(cue) {
-    const { bridge, sync, clickMode } = get();
+    const { bridge, clickMode } = get();
     if (!bridge) return;
 
     if (clickMode === 'anchorA') {
@@ -463,42 +613,31 @@ export const usePanel = create<PanelState>((set, get) => ({
       return;
     }
 
+    const sync = activeSync(get());
     const next = onePointFit(sync, makeAnchor(cue, bridge.video.currentTime));
-    bridge.overlay.setSync(next);
-    set({
-      sync: next,
-      error: null,
-      notice: `Shifted by ${next.offset >= 0 ? '+' : ''}${next.offset.toFixed(2)}s.`,
-    });
-    persistMovie(videoKey(), next, get().track);
+    get().applySync(next, `Shifted by ${next.offset >= 0 ? '+' : ''}${next.offset.toFixed(2)}s.`);
   },
 
-  setAnchor(slot, cue) {
-    const { bridge, sync } = get();
+  setAnchor(anchorSlot, cue) {
+    const { bridge } = get();
     if (!bridge) return;
 
+    const sync = activeSync(get());
     const anchors: SyncState['anchors'] = [...sync.anchors];
-    anchors[slot] = makeAnchor(cue, bridge.video.currentTime);
+    anchors[anchorSlot] = makeAnchor(cue, bridge.video.currentTime);
 
-    const next = { ...sync, anchors };
-    set({
-      sync: next,
-      clickMode: 'quick',
-      error: null,
-      notice: `Anchor ${slot === 0 ? 'A' : 'B'} set.`,
-    });
-    persistMovie(videoKey(), next, get().track);
+    set({ clickMode: 'quick' });
+    get().applySync({ ...sync, anchors }, `Anchor ${anchorSlot === 0 ? 'A' : 'B'} set.`);
   },
 
   clearAnchors() {
-    const next: SyncState = { ...get().sync, anchors: [null, null] };
-    set({ sync: next, notice: null, error: null });
-    persistMovie(videoKey(), next, get().track);
+    get().applySync({ ...activeSync(get()), anchors: [null, null] }, null);
+    set({ notice: null });
   },
 
   applyDriftFit() {
-    const { sync, bridge } = get();
-    const [a, b] = sync.anchors;
+    const { bridge } = get();
+    const [a, b] = activeSync(get()).anchors;
     if (!a || !b || !bridge) {
       set({ error: 'Set both anchors first.' });
       return;
@@ -510,62 +649,63 @@ export const usePanel = create<PanelState>((set, get) => ({
       return;
     }
 
-    bridge.overlay.setSync(result.sync);
     const drift = result.driftPerHour;
-    set({
-      sync: result.sync,
-      error: null,
-      notice: `Rate set to ${(result.scale * 100).toFixed(2)}% — that was ${Math.abs(drift).toFixed(0)}s of drift per hour.`,
-    });
-    persistMovie(videoKey(), result.sync, get().track);
+    get().applySync(
+      result.sync,
+      `Rate set to ${(result.scale * 100).toFixed(2)}% — that was ${Math.abs(drift).toFixed(0)}s of drift per hour.`,
+    );
   },
 
   applyScale(scale) {
-    const { sync, bridge } = get();
-    if (!bridge) return;
+    if (!get().bridge) return;
+    const sync = activeSync(get());
 
     // Keep the first anchor pinned so snapping the rate doesn't shift the whole track.
     const anchor = sync.anchors[0];
     const offset = anchor ? anchor.videoTime - anchor.cueStart * scale : sync.offset;
 
-    const next: SyncState = { ...sync, scale, offset };
-    bridge.overlay.setSync(next);
-    set({ sync: next, notice: `Rate set to ${(scale * 100).toFixed(3)}%.`, error: null });
-    persistMovie(videoKey(), next, get().track);
+    get().applySync({ ...sync, scale, offset }, `Rate set to ${(scale * 100).toFixed(3)}%.`);
   },
 
   nudge(delta) {
-    const { sync, bridge } = get();
-    if (!bridge) return;
-    const next = nudgeSync(sync, delta);
-    bridge.overlay.setSync(next);
-    set({
-      sync: next,
-      notice: `Offset ${next.offset >= 0 ? '+' : ''}${next.offset.toFixed(2)}s.`,
-      error: null,
-    });
-    persistMovie(videoKey(), next, get().track);
+    if (!get().bridge) return;
+    const next = nudgeSync(activeSync(get()), delta);
+    get().applySync(next, `Offset ${next.offset >= 0 ? '+' : ''}${next.offset.toFixed(2)}s.`);
   },
 
   resetTiming() {
-    const next = resetSync();
-    get().bridge?.overlay.setSync(next);
-    set({ sync: next, notice: 'Timing reset.', error: null });
-    persistMovie(videoKey(), next, get().track);
+    get().applySync(resetSync(), 'Timing reset.');
   },
 
   setStyle(patch) {
-    const style = clampStyle({ ...get().style, ...patch });
-    get().bridge?.overlay.setStyle(style);
-    set({ style });
-    persistStyle(style);
+    const id = activeId(get());
+    const styles: [SubtitleStyle, SubtitleStyle] = [...get().styles];
+    styles[id] = clampStyle({ ...styles[id], ...patch });
+
+    get().bridge?.overlay.setStyles(styles, get().dual);
+    set({ styles });
+    persistStyles(styles);
   },
 
   replaceStyle(style) {
-    const clamped = clampStyle(style);
-    get().bridge?.overlay.setStyle(clamped);
-    set({ style: clamped });
-    persistStyle(clamped);
+    const id = activeId(get());
+    const styles: [SubtitleStyle, SubtitleStyle] = [...get().styles];
+    styles[id] = clampStyle(style);
+
+    get().bridge?.overlay.setStyles(styles, get().dual);
+    set({ styles });
+    persistStyles(styles);
+  },
+
+  /** Put the secondary back to "the primary, smaller and dimmer". */
+  resetSecondaryStyle() {
+    const styles: [SubtitleStyle, SubtitleStyle] = [
+      get().styles[0],
+      defaultSecondaryStyle(get().styles[0]),
+    ];
+    get().bridge?.overlay.setStyles(styles, get().dual);
+    set({ styles, notice: 'Secondary style matched to the primary.' });
+    persistStyles(styles);
   },
 
   setPrefs(patch) {

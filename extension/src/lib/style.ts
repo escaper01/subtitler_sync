@@ -1,4 +1,4 @@
-import type { SubtitleStyle } from '@/types';
+import type { DualLayout, SubtitleStyle } from '@/types';
 
 /**
  * Subtitle appearance.
@@ -108,13 +108,86 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Build the CSS for the text block, given how tall the overlay currently is.
+ * The default appearance of the *second* track.
+ *
+ * A copy of the primary, smaller and slightly dimmer. That is not decoration: with two
+ * lines of text on screen, equal weight makes neither one the one you are reading. The
+ * secondary is normally the language you are learning from or checking against, so it
+ * wants to be legible and subordinate.
+ */
+export function defaultSecondaryStyle(primary: SubtitleStyle): SubtitleStyle {
+  return {
+    ...primary,
+    fontSizePct: Math.max(STYLE_LIMITS.fontSizePct[0], primary.fontSizePct * 0.8),
+    opacity: 0.85,
+  };
+}
+
+/**
+ * Build the CSS for both text blocks, given how tall the overlay currently is.
+ *
+ * The two blocks live in one `.stack`, which is what carries the position. **Only the
+ * primary's `bottomPct`, `maxWidthPct` and `textAlign` are read** — those describe where
+ * the stack sits, and a secondary with its own idea of "bottom" would not be a second line,
+ * it would be a second overlay. Everything else (font, size, colour, outline, background)
+ * is per block.
+ *
+ * `column-reverse` puts the first DOM child at the bottom, so the primary keeps exactly the
+ * position it would have had alone and does not jump when a secondary track is added.
  *
  * The outline uses `paint-order: stroke fill`, which strokes behind the glyph rather than
  * over it — without it a 2px stroke eats into thin letterforms and the text looks bolder
  * and muddier than intended.
  */
-export function subtitleCss(style: SubtitleStyle, overlayHeightPx: number): string {
+export function subtitleCss(
+  styles: readonly [SubtitleStyle, SubtitleStyle],
+  layout: DualLayout,
+  overlayHeightPx: number,
+): string {
+  const primary = styles[0];
+  const px = (pct: number) => (overlayHeightPx * pct) / 100;
+
+  const align =
+    primary.textAlign === 'left'
+      ? 'flex-start'
+      : primary.textAlign === 'right'
+        ? 'flex-end'
+        : 'center';
+
+  return `
+    .stack {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: ${px(primary.bottomPct).toFixed(2)}px;
+      max-width: ${primary.maxWidthPct}%;
+      display: flex;
+      flex-direction: ${layout.order === 'secondary-above' ? 'column-reverse' : 'column'};
+      gap: ${px(layout.gapPct).toFixed(2)}px;
+      align-items: ${align};
+    }
+    /* A slot with no active cue must not hold the gap open, or the primary line shifts
+       every time the secondary happens to be silent. */
+    .cues:empty { display: none; }
+    ${blockCss(0, styles[0], overlayHeightPx, align, primary.textAlign)}
+    ${blockCss(1, styles[1], overlayHeightPx, align, primary.textAlign)}
+  `;
+}
+
+/**
+ * One slot's block: everything that is genuinely per-track.
+ *
+ * Alignment is passed in from the primary rather than read from `style`. Two blocks in one
+ * stack that disagree about which edge they hang off do not read as a pair, and the panel
+ * hides the control for the secondary to match.
+ */
+function blockCss(
+  slot: 0 | 1,
+  style: SubtitleStyle,
+  overlayHeightPx: number,
+  align: string,
+  textAlign: string,
+): string {
   const px = (pct: number) => (overlayHeightPx * pct) / 100;
   const fontSize = px(style.fontSizePct);
 
@@ -129,17 +202,12 @@ export function subtitleCss(style: SubtitleStyle, overlayHeightPx: number): stri
       : '-webkit-text-stroke: 0;';
 
   return `
-    .cues {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      bottom: ${px(style.bottomPct).toFixed(2)}px;
-      max-width: ${style.maxWidthPct}%;
+    .cues-${slot} {
       display: flex;
       flex-direction: column;
       gap: ${(fontSize * 0.18).toFixed(2)}px;
-      align-items: ${style.textAlign === 'left' ? 'flex-start' : style.textAlign === 'right' ? 'flex-end' : 'center'};
-      text-align: ${style.textAlign};
+      align-items: ${align};
+      text-align: ${textAlign};
       font-family: ${style.fontFamily};
       font-size: ${fontSize.toFixed(2)}px;
       font-weight: ${style.fontWeight};
@@ -153,7 +221,7 @@ export function subtitleCss(style: SubtitleStyle, overlayHeightPx: number): stri
       ${stroke}
       ${shadow}
     }
-    .cue {
+    .cues-${slot} .cue {
       background: ${style.bgAlpha > 0 ? hexToRgba(style.bgColor, style.bgAlpha) : 'transparent'};
       padding: ${style.bgAlpha > 0 ? `${px(style.bgPadding).toFixed(2)}px ${px(style.bgPadding * 1.6).toFixed(2)}px` : '0'};
       border-radius: ${style.bgRadius}px;

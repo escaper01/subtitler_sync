@@ -1,7 +1,7 @@
-import type { Cue, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
-import { IDENTITY_SYNC } from '@/types';
+import type { Cue, DualLayout, SlotId, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
+import { DEFAULT_DUAL_LAYOUT, IDENTITY_SYNC } from '@/types';
 import { CueLookup } from '@/lib/subtitles/lookup';
-import { DEFAULT_STYLE, subtitleCss } from '@/lib/style';
+import { DEFAULT_STYLE, defaultSecondaryStyle, subtitleCss } from '@/lib/style';
 import { toCueTime } from '@/lib/sync';
 import { log } from '@/lib/log';
 
@@ -28,23 +28,56 @@ const PLAYER_CONTAINERS = '.jwplayer, .video-js, .plyr, .shaka-video-container, 
 /** Safety net for layout changes no observer reports (CSS transitions, sibling reflow). */
 const LAYOUT_POLL_MS = 500;
 
+/**
+ * One slot's render state.
+ *
+ * `paintedKey` is per slot on purpose: the two tracks change cue at different moments, and
+ * a shared key would repaint both every time either one moved — which is most frames.
+ */
+interface SlotRender {
+  el: HTMLDivElement | null;
+  lookup: CueLookup | null;
+  track: SubtitleTrack | null;
+  sync: SyncState;
+  visible: boolean;
+  paintedKey: string;
+}
+
+function emptySlotRender(): SlotRender {
+  return {
+    el: null,
+    lookup: null,
+    track: null,
+    sync: IDENTITY_SYNC,
+    visible: true,
+    paintedKey: '',
+  };
+}
+
 export class SubtitleOverlay {
   private host: HTMLDivElement | null = null;
   private shadow: ShadowRoot | null = null;
   private styleEl: HTMLStyleElement | null = null;
-  private cuesEl: HTMLDivElement | null = null;
+  private stackEl: HTMLDivElement | null = null;
 
   private video: HTMLVideoElement | null = null;
   private container: HTMLElement | null = null;
 
-  private lookup: CueLookup | null = null;
-  private track: SubtitleTrack | null = null;
-  private sync: SyncState = IDENTITY_SYNC;
-  private style: SubtitleStyle = DEFAULT_STYLE;
+  /**
+   * The two tracks. Both live inside the one host, which is what keeps every fullscreen,
+   * letterbox and re-parenting fix already solved — a second overlay would need its own
+   * copy of all of it.
+   */
+  private slots: [SlotRender, SlotRender] = [emptySlotRender(), emptySlotRender()];
 
+  private styles: [SubtitleStyle, SubtitleStyle] = [
+    DEFAULT_STYLE,
+    defaultSecondaryStyle(DEFAULT_STYLE),
+  ];
+  private layout: DualLayout = DEFAULT_DUAL_LAYOUT;
+
+  /** The panel's global hide. Combined with each slot's own `visible`. */
   private visible = true;
-  /** Indices of the cues currently painted, to avoid rewriting the DOM every frame. */
-  private paintedKey = '';
   private overlayHeight = 0;
 
   private resizeObserver: ResizeObserver | null = null;
@@ -82,8 +115,9 @@ export class SubtitleOverlay {
     this.host?.remove();
     this.host = null;
     this.shadow = null;
-    this.cuesEl = null;
+    this.stackEl = null;
     this.styleEl = null;
+    for (const slot of this.slots) slot.el = null;
   }
 
   private detachVideo(): void {
@@ -122,10 +156,21 @@ export class SubtitleOverlay {
     this.shadow = this.host.attachShadow({ mode: 'open' });
 
     this.styleEl = document.createElement('style');
-    this.cuesEl = document.createElement('div');
-    this.cuesEl.className = 'cues';
 
-    this.shadow.append(this.styleEl, this.cuesEl);
+    // The stack carries the position; the two blocks inside it carry the text. DOM order
+    // is primary-then-secondary always — which of them ends up on top is `flex-direction`,
+    // so changing the order never moves the primary line.
+    this.stackEl = document.createElement('div');
+    this.stackEl.className = 'stack';
+
+    for (const id of [0, 1] as const) {
+      const el = document.createElement('div');
+      el.className = `cues cues-${id}`;
+      this.slots[id].el = el;
+      this.stackEl.append(el);
+    }
+
+    this.shadow.append(this.styleEl, this.stackEl);
   }
 
   private mount(): void {
@@ -206,7 +251,9 @@ export class SubtitleOverlay {
     let width = videoRect.width;
     let height = videoRect.height;
 
-    if (this.style.anchorTo === 'picture') {
+    // The primary's, not the active slot's: this positions the host, which both blocks
+    // sit inside. A per-slot anchor would mean two overlays, not one stack.
+    if (this.styles[0].anchorTo === 'picture') {
       const inset = letterbox(this.video, videoRect.width, videoRect.height);
       left += inset.x;
       top += inset.y;
@@ -228,32 +275,48 @@ export class SubtitleOverlay {
 
   /* -------------------------------------------------------------------- state */
 
-  setTrack(track: SubtitleTrack | null): void {
-    this.track = track;
-    this.lookup = track ? new CueLookup(track.cues) : null;
-    this.paintedKey = '';
+  setTrack(id: SlotId, track: SubtitleTrack | null): void {
+    const slot = this.slots[id];
+    slot.track = track;
+    slot.lookup = track ? new CueLookup(track.cues) : null;
+    slot.paintedKey = '';
     this.render();
   }
 
-  getTrack(): SubtitleTrack | null {
-    return this.track;
+  getTrack(id: SlotId): SubtitleTrack | null {
+    return this.slots[id].track;
   }
 
-  setSync(sync: SyncState): void {
-    this.sync = sync;
-    this.paintedKey = '';
+  setSync(id: SlotId, sync: SyncState): void {
+    const slot = this.slots[id];
+    slot.sync = sync;
+    slot.paintedKey = '';
     this.render();
   }
 
-  setStyle(style: SubtitleStyle): void {
-    this.style = style;
+  /** Hide one track while leaving the other alone. */
+  setSlotVisible(id: SlotId, visible: boolean): void {
+    const slot = this.slots[id];
+    slot.visible = visible;
+    slot.paintedKey = '';
+    this.render();
+  }
+
+  setStyles(styles: readonly [SubtitleStyle, SubtitleStyle], layout: DualLayout): void {
+    this.styles = [styles[0], styles[1]];
+    this.layout = layout;
     this.applyStyle();
     this.updateLayout();
+    // The secondary is painted only while dual mode is on, so switching it off has to
+    // clear what is already on screen rather than merely stop updating it.
+    this.slots[1].paintedKey = '';
+    this.render();
   }
 
+  /** The panel's global hide, over the top of each slot's own. */
   setVisible(visible: boolean): void {
     this.visible = visible;
-    this.paintedKey = '';
+    for (const slot of this.slots) slot.paintedKey = '';
     this.render();
   }
 
@@ -262,7 +325,7 @@ export class SubtitleOverlay {
     this.styleEl.textContent = `
       :host { all: initial; }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      ${subtitleCss(this.style, this.overlayHeight || 360)}
+      ${subtitleCss(this.styles, this.layout, this.overlayHeight || 360)}
     `;
   }
 
@@ -314,24 +377,35 @@ export class SubtitleOverlay {
     this.schedule();
   };
 
+  /**
+   * Resolve both slots and repaint only what changed.
+   *
+   * Two cursor-cached binary searches per frame instead of one. `CueLookup` is amortised
+   * O(1) on sequential playback, so the second costs nothing measurable — and each slot
+   * keeps its own `paintedKey`, so the common case is that neither block touches the DOM.
+   */
   private render(mediaTime?: number): void {
-    if (!this.cuesEl || !this.video) return;
+    if (!this.video) return;
+    const time = mediaTime ?? this.video.currentTime;
 
-    const active =
-      this.visible && this.lookup
-        ? this.lookup.findActive(toCueTime(mediaTime ?? this.video.currentTime, this.sync))
-        : [];
+    for (const id of [0, 1] as const) {
+      const slot = this.slots[id];
+      if (!slot.el) continue;
 
-    const key = active.map((cue) => cue.index).join(',');
-    if (key === this.paintedKey) return;
-    this.paintedKey = key;
-    this.paint(active);
+      // Slot 1 is in the DOM whether or not dual mode is on; what stops it drawing is this
+      // condition, not its absence. One code path, and toggling the mode needs no rebuild.
+      const showing = this.visible && slot.visible && (id === 0 || this.layout.enabled);
+      const active =
+        showing && slot.lookup ? slot.lookup.findActive(toCueTime(time, slot.sync)) : [];
+
+      const key = active.map((cue) => cue.index).join(',');
+      if (key === slot.paintedKey) continue;
+      slot.paintedKey = key;
+      this.paint(slot.el, active);
+    }
   }
 
-  private paint(cues: Cue[]): void {
-    const target = this.cuesEl;
-    if (!target) return;
-
+  private paint(target: HTMLDivElement, cues: Cue[]): void {
     target.replaceChildren(
       ...cues.map((cue) => {
         const element = document.createElement('div');

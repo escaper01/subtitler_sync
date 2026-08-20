@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Release } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/api-types';
-import { usePanel, trackKey } from '@/panel/store';
+import { selectSlotId, usePanel, trackKey } from '@/panel/store';
 import { Button, TextInput } from '@/panel/components/ui';
 import { LanguagePicker } from '@/panel/components/LanguagePicker';
 
@@ -25,11 +25,21 @@ export function FindTab() {
   const setLanguage = usePanel((s) => s.setLanguage);
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
+  const dual = usePanel((s) => s.dual);
+  const slotId = usePanel(selectSlotId);
 
   const searching = find.status === 'searching';
 
   return (
     <div className="space-y-2.5">
+      {/* Loading a result replaces whichever track is selected, which is destructive and
+          easy to do by accident once there are two. Say so before the button, not after. */}
+      {dual.enabled && (
+        <p className="rounded border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white/45">
+          Results load into the{' '}
+          <span className="text-sky-300">{slotId === 0 ? 'primary' : 'secondary'}</span>.
+        </p>
+      )}
       <div className="flex gap-1.5">
         <TextInput
           value={find.query}

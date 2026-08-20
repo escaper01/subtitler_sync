@@ -168,19 +168,21 @@ would come up dead and look like one too.
 ```
 src/
   manifest.config.ts     MV3 manifest, authored as TypeScript
-  types.ts               Cue, SyncState, SubtitleStyle, TabState, the message unions
+  types.ts               Cue, SyncState, TrackSlot, DualLayout, SubtitleStyle, the message unions
 
   lib/
     subtitles/parse.ts   parseSRT / parseVTT / sniffFormat / decode with encoding fallback
     subtitles/lookup.ts  cursor-cached binary search over sorted cues
     sync.ts              applyTransform, onePointAnchor, twoPointFit, FPS_RATIOS
+    slots.ts             the two subtitle slots as pure data — no React, no chrome.*
+    style.ts             DEFAULT_STYLE, the clamps, and the stack + per-block CSS
     sites.ts             the allowlist: normalising, matching, storage, top-host resolution
     api.ts               subtitle search client — SERVICE WORKER ONLY, see below
     api-types.ts         copy of web/lib/api-types.ts — keep identical
     languages.ts         copy of web/lib/languages.ts — keep identical
     searchTitle.ts       guesses a film title from the tab's <title> to seed the search box
     messaging.ts         typed wrappers over chrome.runtime / chrome.tabs messaging
-    storage.ts           style + allowlist + languages → storage.sync; per-movie → storage.local
+    storage.ts           style/style2/dual + allowlist + language → sync; per-film slots → local
     videoKey.ts          stable per-film id (top page path + title + rounded duration)
     log.ts               console logger, off unless the page flag is set
 
@@ -332,6 +334,56 @@ the point: without it a search for a popular film meant thirty-odd detail fetche
 someone else's server.
 
 ---
+
+## Two subtitles at once
+
+Off by default (`DualLayout.enabled`), and the single-track path is unchanged — that is a
+requirement, not a nicety, since most sessions are one track.
+
+**Two slots, two timings.** `slots[0]` is the primary, `slots[1]` the secondary, each with
+its own `SyncState`. Independent timing is the whole point: two tracks for one film are
+almost never cut from the same release, so a shared transform would mean fixing one breaks
+the other. Every existing sync tool applies to a slot unchanged, because `lib/sync.ts` is
+pure and never knew which track it was working on.
+
+**One overlay host, two blocks inside it.** The shadow root holds a `.stack` containing
+`.cues-0` and `.cues-1`. This is the decisive design choice: a second overlay would need
+its own copy of the fullscreen re-parenting, the letterbox maths, the `ResizeObserver` and
+the rect tracking — every gotcha in this file, solved twice. Inside one host they are solved
+once.
+
+Consequences worth knowing:
+
+- **DOM order is always primary-then-secondary.** Which one appears on top is
+  `flex-direction` (`column-reverse` for secondary-above), so changing the order never moves
+  the primary line.
+- **Position belongs to the stack, not to a block.** `bottomPct`, `maxWidthPct`, `anchorTo`
+  and `textAlign` are read from the *primary* style only, and the Style tab hides those
+  controls when you are editing the secondary. A secondary with its own idea of "bottom"
+  would not be a second line; it would be a second overlay.
+- **`.cues:empty { display: none }` is load-bearing.** Without it a slot with no active cue
+  still holds the stack's `gap` open, and the primary line hops every time the secondary
+  happens to be silent.
+- **Each slot keeps its own `paintedKey`.** The two tracks change cue at different moments;
+  one shared key would repaint both on most frames.
+- Slot 1 exists in the DOM whether or not dual mode is on. What stops it drawing is a
+  condition in `render()`, so toggling the mode needs no rebuild.
+
+**Storage needed no migration.** Appearance is three `storage.sync` keys — `style`,
+`style2`, `dual` — so a `style` written before this feature loads unchanged as the primary
+and the other two fall back. Per-film state grew a `slots` pair, and `storage.ts#toSlots`
+lifts a legacy `{ track, sync }` into slot 0 with slot 1 empty, which is exactly what the
+user had. `MAX_REMEMBERED_MOVIES` dropped 20 → 12, because a film can now hold two tracks
+against the same 10 MB quota.
+
+`lib/slots.ts` holds the reducers, deliberately free of React, zustand, `chrome.*` and the
+overlay — it is the part worth testing, and the part the search-free build copies verbatim.
+
+**One selector for the whole panel.** `activeSlot` decides which slot File, Find, Sync
+*and* Style act on. Four independent toggles would be three extra chances to edit the track
+you are not looking at. Read it through `selectSlotId` / `selectTrack` / `selectSync` /
+`selectStyle` rather than indexing `slots[activeSlot]` by hand — those fold in the
+dual-off case, where the active slot is forced to the primary.
 
 ## Subtitle timing model
 

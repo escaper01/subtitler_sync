@@ -21,6 +21,7 @@ export class PanelHost {
   private host: HTMLDivElement | null = null;
   private root: Root | null = null;
   private mounted = false;
+  private disposeShield: (() => void) | null = null;
 
   mount(video: HTMLVideoElement, overlay: SubtitleOverlay, container: HTMLElement): void {
     if (this.mounted) return;
@@ -61,6 +62,8 @@ export class PanelHost {
 
     container.appendChild(this.host);
 
+    this.disposeShield = installEarlyTypingShield(this.host);
+
     this.root = createRoot(mountPoint);
     this.root.render(createElement(App, { video, overlay }));
     this.mounted = true;
@@ -71,6 +74,8 @@ export class PanelHost {
   unmount(): void {
     this.root?.unmount();
     this.root = null;
+    this.disposeShield?.();
+    this.disposeShield = null;
     this.host?.remove();
     this.host = null;
     this.mounted = false;
@@ -87,6 +92,38 @@ export class PanelHost {
   get isMounted(): boolean {
     return this.mounted;
   }
+}
+
+/**
+ * The `host`-level swallow listeners above run in the bubble phase, which is too late for a
+ * player whose own space-to-play/pause handler sits on `document` (or `window`) in the
+ * *capture* phase: that handler runs first, and if it pairs `preventDefault()` with
+ * `stopPropagation()` — a common "nobody else gets this key" idiom — the event never
+ * reaches our shadow root at all. `TextInput`'s own `defaultPrevented` check can't save it;
+ * there is nothing left on our side to run.
+ *
+ * A capture-phase listener on `window` always fires before one on `document`, regardless of
+ * when each was registered — propagation order follows the DOM tree, not registration time.
+ * So this intercepts the space key up there, before the page's handler is even reached, and
+ * calls only `stopPropagation()` (never `preventDefault()`): that keeps the page from ever
+ * seeing the event while leaving the browser's own default action — inserting the
+ * character, then firing the native `input` event React's `onChange` listens for — intact.
+ * No manual splicing needed; the browser does the correct thing once the page is out of the
+ * way.
+ */
+function installEarlyTypingShield(host: HTMLElement): () => void {
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.key !== ' ') return;
+    if (!event.composedPath().includes(host)) return;
+
+    const target = event.composedPath()[0];
+    if (!(target instanceof HTMLElement) || !/^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
+
+    event.stopPropagation();
+  };
+
+  window.addEventListener('keydown', onKeyDown, true);
+  return () => window.removeEventListener('keydown', onKeyDown, true);
 }
 
 /**

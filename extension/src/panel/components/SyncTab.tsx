@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Cue } from '@/types';
-import { usePanel } from '@/panel/store';
+import { selectSlotId, selectSync, selectTrack, usePanel } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
 import { describeSync, snapCandidate, toCueTime, toVideoTime } from '@/lib/sync';
-import { Button, clock } from '@/panel/components/ui';
+import { Button, TextInput, clock } from '@/panel/components/ui';
 
 const ROW_HEIGHT = 46;
 const OVERSCAN = 4;
@@ -11,9 +11,11 @@ const OVERSCAN = 4;
 const MANUAL_SCROLL_GRACE_MS = 4000;
 
 export function SyncTab() {
-  const track = usePanel((s) => s.track);
-  const sync = usePanel((s) => s.sync);
+  const track = usePanel(selectTrack);
+  const sync = usePanel(selectSync);
   const time = usePanel((s) => s.time);
+  const dual = usePanel((s) => s.dual);
+  const slotId = usePanel(selectSlotId);
 
   const lookup = useMemo(() => (track ? new CueLookup(track.cues) : null), [track]);
   const activeIndex = useMemo(() => {
@@ -24,13 +26,29 @@ export function SyncTab() {
   if (!track) {
     return (
       <p className="py-6 text-center text-[11px] text-white/40">
-        Load a subtitle file first — then click the line you just heard and everything lines up.
+        {dual.enabled
+          ? `Nothing loaded in the ${slotId === 0 ? 'primary' : 'secondary'} yet — load a file into it from the File tab.`
+          : 'Load a subtitle file first — then click the line you just heard and everything lines up.'}
       </p>
     );
   }
 
   return (
     <div className="space-y-2.5">
+      {/* Which track these controls move. The panel-wide selector says it too, but this
+          list is where a mis-click actually costs something — an offset applied to the
+          wrong track looks like the tool is broken. */}
+      {dual.enabled && (
+        <div className="flex items-center gap-1.5 rounded border border-sky-400/25 bg-sky-500/[0.07] px-2 py-1">
+          <span className="text-[10px] text-white/50">Adjusting the</span>
+          <span className="text-[10px] font-medium text-sky-200">
+            {slotId === 0 ? 'primary' : 'secondary'}
+          </span>
+          <span className="ml-auto max-w-40 truncate text-[10px] text-white/35" title={track.name}>
+            {track.name}
+          </span>
+        </div>
+      )}
       <OffsetBar />
       <CueList cues={track.cues} activeIndex={activeIndex} />
       <DriftFix />
@@ -41,7 +59,7 @@ export function SyncTab() {
 /* ------------------------------------------------------------------ offset bar */
 
 function OffsetBar() {
-  const sync = usePanel((s) => s.sync);
+  const sync = usePanel(selectSync);
   const nudge = usePanel((s) => s.nudge);
   const reset = usePanel((s) => s.resetTiming);
 
@@ -73,7 +91,7 @@ function OffsetBar() {
 /* -------------------------------------------------------------------- cue list */
 
 function CueList({ cues, activeIndex }: { cues: Cue[]; activeIndex: number }) {
-  const sync = usePanel((s) => s.sync);
+  const sync = usePanel(selectSync);
   const clickMode = usePanel((s) => s.clickMode);
   const syncToCue = usePanel((s) => s.syncToCue);
 
@@ -129,11 +147,11 @@ function CueList({ cues, activeIndex }: { cues: Cue[]; activeIndex: number }) {
   return (
     <div>
       <div className="mb-1.5 flex items-center gap-1.5">
-        <input
+        <TextInput
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder="Search lines…"
-          className="flex-1 rounded border border-white/10 bg-black/40 px-2 py-1 text-[11px] text-white/90 placeholder:text-white/25 outline-none focus:border-sky-400/60"
+          className="flex-1"
         />
         <span
           className={`shrink-0 text-[10px] ${clickMode === 'quick' ? 'text-white/40' : 'text-sky-300'}`}
@@ -211,7 +229,7 @@ function Row({
 /* ------------------------------------------------------------------ drift fix */
 
 function DriftFix() {
-  const sync = usePanel((s) => s.sync);
+  const sync = usePanel(selectSync);
   const clickMode = usePanel((s) => s.clickMode);
   const setClickMode = usePanel((s) => s.setClickMode);
   const clearAnchors = usePanel((s) => s.clearAnchors);
