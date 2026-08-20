@@ -8,6 +8,7 @@ import {
   fetchRelease,
   searchSubtitles,
 } from '@/lib/api';
+import { fetchSeasons, searchShows } from '@/lib/tvmaze';
 
 /**
  * Service worker.
@@ -105,6 +106,14 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
 
     case 'api:download': {
       return downloadSubtitle(message.path);
+    }
+
+    case 'tv:search': {
+      return searchShows(message.query);
+    }
+
+    case 'tv:seasons': {
+      return fetchSeasons(message.showId);
     }
 
     case 'donate': {

@@ -2,6 +2,8 @@ import type { DualLayout, SubtitleStyle, SubtitleTrack, SyncState } from '@/type
 import { DEFAULT_DUAL_LAYOUT, IDENTITY_SYNC } from '@/types';
 import { clampStyle, DEFAULT_STYLE, defaultSecondaryStyle } from '@/lib/style';
 import { DEFAULT_LANGUAGE, isKnownLanguage } from '@/lib/languages';
+import type { RememberedShow } from '@/lib/tv';
+import { MAX_REMEMBERED_SHOWS } from '@/lib/tv';
 import { contextAlive } from '@/lib/log';
 
 /**
@@ -19,6 +21,7 @@ const DUAL_KEY = 'dual';
 const PANEL_KEY = 'panel';
 const LANGS_KEY = 'langs';
 const MOVIE_PREFIX = 'movie:';
+const SHOWS_KEY = 'tv:recent';
 
 /**
  * Films to remember before evicting the least recently used.
@@ -177,6 +180,53 @@ export async function savePanelPrefs(prefs: PanelPrefs): Promise<void> {
   if (!contextAlive()) return;
   try {
     await chrome.storage.local.set({ [PANEL_KEY]: prefs });
+  } catch {
+    /* ignore */
+  }
+}
+
+/* -------------------------------------------------------------------- series */
+
+/**
+ * Shows the user has browsed, and where they got to in each.
+ *
+ * `storage.local`, not `sync`: it is a watching position, not a preference, and the whole
+ * point is that it is instantly right on the machine you are actually watching on — a sync
+ * round trip that occasionally resolves stale would be worse than not syncing at all.
+ *
+ * Reading tolerates anything: a corrupt entry drops out rather than taking the list with
+ * it, because losing "where I got to in one show" beats losing all eight.
+ */
+export async function loadShows(): Promise<RememberedShow[]> {
+  if (!contextAlive()) return [];
+  try {
+    const stored = await chrome.storage.local.get(SHOWS_KEY);
+    const value = stored[SHOWS_KEY];
+    if (!Array.isArray(value)) return [];
+
+    const out: RememberedShow[] = [];
+    for (const raw of value) {
+      const row = raw as Partial<RememberedShow> | null;
+      if (typeof row?.showId !== 'number' || typeof row.name !== 'string') continue;
+      if (typeof row.season !== 'number' || typeof row.episode !== 'number') continue;
+      out.push({
+        showId: row.showId,
+        name: row.name,
+        season: row.season,
+        episode: row.episode,
+        lastUsedAt: typeof row.lastUsedAt === 'number' ? row.lastUsedAt : 0,
+      });
+    }
+    return out.slice(0, MAX_REMEMBERED_SHOWS);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveShows(shows: readonly RememberedShow[]): Promise<void> {
+  if (!contextAlive()) return;
+  try {
+    await chrome.storage.local.set({ [SHOWS_KEY]: shows.slice(0, MAX_REMEMBERED_SHOWS) });
   } catch {
     /* ignore */
   }

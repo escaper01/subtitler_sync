@@ -167,6 +167,15 @@ export type ToBackground =
   | { kind: 'api:release'; path: string; lang: string }
   | { kind: 'api:download'; path: string }
   /**
+   * Browsing a series on TVmaze, to build a search query without typing it.
+   *
+   * Relayed through the worker for the same reason the subtitle API is: a content
+   * script's `fetch` obeys the *page's* CSP, so this would work on the harness and fail
+   * on a site with a strict `connect-src`. See lib/tvmaze.ts.
+   */
+  | { kind: 'tv:search'; query: string }
+  | { kind: 'tv:seasons'; showId: number }
+  /**
    * The admin-controlled donation prompt, or nothing.
    *
    * There were three `auth:*` variants beside this one, carrying a licence key. They went

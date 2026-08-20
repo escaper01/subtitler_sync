@@ -4,6 +4,7 @@ import { PAGE_SIZE } from '@/lib/api-types';
 import { selectSlotId, usePanel, trackKey } from '@/panel/store';
 import { Button, TextInput } from '@/panel/components/ui';
 import { LanguagePicker } from '@/panel/components/LanguagePicker';
+import { SeriesBrowser } from '@/panel/components/SeriesBrowser';
 
 /** Matches the API's own limit, so over-long titles are rejected before a round trip. */
 const MAX_QUERY_LENGTH = 100;
@@ -32,6 +33,10 @@ export function FindTab() {
 
   return (
     <div className="space-y-2.5">
+      {/* Above the query box, because the point of it is to fill that box in. TV only —
+          TVmaze has no films, so for a film the box below is still typed into directly. */}
+      <SeriesBrowser />
+
       {/* Loading a result replaces whichever track is selected, which is destructive and
           easy to do by accident once there are two. Say so before the button, not after. */}
       {dual.enabled && (

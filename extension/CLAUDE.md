@@ -175,6 +175,8 @@ src/
     subtitles/lookup.ts  cursor-cached binary search over sorted cues
     sync.ts              applyTransform, onePointAnchor, twoPointFit, FPS_RATIOS
     slots.ts             the two subtitle slots as pure data — no React, no chrome.*
+    tv.ts                seasons, episodes, next/previous, query formatting — pure
+    tvmaze.ts            the TVmaze client and its caches — SERVICE WORKER ONLY
     style.ts             DEFAULT_STYLE, the clamps, and the stack + per-block CSS
     sites.ts             the allowlist: normalising, matching, storage, top-host resolution
     api.ts               subtitle search client — SERVICE WORKER ONLY, see below
@@ -334,6 +336,62 @@ the point: without it a search for a popular film meant thirty-odd detail fetche
 someone else's server.
 
 ---
+
+## The series browser
+
+Picking a show, a season and an episode, so a search for episode four is a click rather
+than typing `Person of Interest s01e04` for the fourth time this evening. It sits at the top
+of the **Find** tab and its only output is the query in the box below it.
+
+**Data from TVmaze, direct from the service worker.** No API key, and — unlike subtitle
+search — it does **not** go through `web/`. The contract is stable, and routing it through
+our own server would mean the browser stops working whenever that server does, for a feature
+whose whole job is to fill in a text box. It still has to run in the worker: a content
+script's `fetch` obeys the *page's* CSP, so calling it from the panel works on the harness
+and fails on a site with a strict `connect-src`.
+
+**One request per show, and not the obvious one.** `/shows/:id/episodes`, grouped by season
+— **never `/shows/:id/seasons`**. That endpoint's `episodeOrder` is null for a season still
+airing and is the *ordered* count rather than the episodes actually listed, so the shows
+somebody is most likely to be watching are exactly the ones it gets wrong. Counting the real
+list cannot fail that way and costs one fetch instead of two.
+
+**Next/previous walk the list, they do not add one.** Season one ends at 7 for one show and
+23 for another, so `episode + 1` is right until it silently is not — and the failure looks
+like a search that found nothing rather than like a bug. Holding the real episode list is
+what makes the season boundary correct, and it is also what makes a gap in the numbering
+(a withdrawn episode) step over rather than into. There are tests for both.
+
+**Specials are dropped** — season 0, or a null episode number. `s00e01` is not something you
+can search a subtitle site for.
+
+**No poster images.** TVmaze serves them from `static.tvmaze.com`, and the panel renders in
+a shadow root inside *somebody else's document*; images in a shadow root still obey the host
+page's `img-src`, so posters would load on some sites and silently fail on others, which
+reads as a bug. Name, year, network and status are enough to tell two shows apart.
+
+**Caching, around a worker that gets suspended.** Nothing may live in worker memory — it
+would appear to work in development and miss constantly in real use. Searches go in
+`storage.session` (cheap to refetch, gone when the browser closes); episode lists go in
+`storage.local` with a seven-day TTL, which is what makes *Next* instant a week later.
+
+**The position advances when a search runs, not when a subtitle loads.** Finding a track
+that actually fits often takes two or three attempts on one episode, and a counter running
+ahead of the user is worse than one they press once.
+
+`lib/tv.ts` is the pure half — grouping, walking, query formatting, the remembered list —
+and holds all the tests. `lib/tvmaze.ts` is fetching and caching, worker-only.
+`panel/tvStore.ts` is a **separate zustand store** from `usePanel`: it owns no subtitle
+state and touches the panel only to set the query and press Search. That seam is also what
+makes the whole feature a clean deletion for the search-free build, which has no query box
+to fill in.
+
+**Television only.** TVmaze has no films, and there is no comparable film database that
+works without an API key — the Studio Ghibli one is about twenty titles. For a film the
+query box is typed into directly, seeded from the page title by `guessSearchTitle`, exactly
+as before. If film metadata is ever wanted it means TMDb or OMDb and therefore a key, which
+means the call moves behind `web/` so the key is not shipped inside an extension anybody can
+unzip.
 
 ## Two subtitles at once
 
