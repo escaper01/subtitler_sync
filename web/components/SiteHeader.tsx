@@ -7,10 +7,10 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { STORE_URL } from '@/lib/site';
 
 const LINKS = [
-  { href: '/donate', label: 'Donate' },
   { href: '/how-to-use', label: 'How to use' },
+  { href: '/download', label: 'Full build' },
+  { href: '/donate', label: 'Donate' },
   { href: '/report', label: 'Report a problem' },
-  { href: '/feature-request', label: 'Request a feature' },
 ];
 
 export function SiteHeader() {

@@ -19,6 +19,7 @@ const OUT = resolve(dirname(fileURLToPath(import.meta.url)), '../public/screensh
 /** Keep in step with lib/features.ts — the file names there are these. */
 const SHOTS = [
   ['load-file', 'Loading a subtitle file'],
+  ['dual', 'Two languages at once'],
   ['click-to-sync', 'Click-to-sync'],
   ['drift', 'Drift correction'],
   ['styling', 'Subtitle styling'],

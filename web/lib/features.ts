@@ -27,6 +27,14 @@ export const FREE_FEATURES: Feature[] = [
     alt: 'The panel open over a video with a subtitle file loaded',
   },
   {
+    name: 'Two languages at once',
+    summary: 'Show a second subtitle track above the first, each timed separately.',
+    detail:
+      'The line you are learning from and the line you already understand, on screen together. The two tracks are almost never cut from the same release, so each keeps its own timing — fixing one does not move the other.',
+    image: '/screenshots/dual.svg',
+    alt: 'Two subtitle tracks stacked over a video, in different languages',
+  },
+  {
     name: 'Fix the timing with a click',
     summary: 'Click the line being spoken now. The whole track snaps to it.',
     detail:

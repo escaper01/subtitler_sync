@@ -32,6 +32,11 @@ export function SiteFooter() {
               </Link>
             </li>
             <li>
+              <Link href="/download" className="text-muted transition-colors hover:text-accent">
+                Full build
+              </Link>
+            </li>
+            <li>
               <Link href="/how-to-use" className="text-muted transition-colors hover:text-accent">
                 How to use
               </Link>
