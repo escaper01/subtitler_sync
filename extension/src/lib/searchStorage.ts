@@ -13,6 +13,8 @@ import { contextAlive } from '@/lib/log';
  */
 
 const LANGS_KEY = 'langs';
+/** The second track's language. A separate key, so an old `langs` still loads as-is. */
+const LANGS2_KEY = 'langs2';
 const SHOWS_KEY = 'tv:recent';
 
 /* ------------------------------------------------------------------- language */
@@ -48,6 +50,36 @@ export async function saveLanguage(code: string): Promise<void> {
     await chrome.storage.sync.set({ [LANGS_KEY]: code });
   } catch {
     /* quota or offline — the picker still reflects the choice for this session */
+  }
+}
+
+/**
+ * The language of the *second* subtitle track, when two are shown.
+ *
+ * Stored separately rather than as a pair, so a profile that has never used dual subtitles
+ * loads its existing `langs` untouched.
+ *
+ * Falls back to the primary rather than to English. Equal languages are a harmless state —
+ * the Find tab simply does not offer the second-language button until they differ — and it
+ * is a far better starting point than silently proposing a language the user does not read.
+ */
+export async function loadLanguage2(primary: string): Promise<string> {
+  if (!contextAlive()) return primary;
+  try {
+    const stored = await chrome.storage.sync.get(LANGS2_KEY);
+    const code = stored[LANGS2_KEY] as unknown;
+    return typeof code === 'string' && isKnownLanguage(code) ? code : primary;
+  } catch {
+    return primary;
+  }
+}
+
+export async function saveLanguage2(code: string): Promise<void> {
+  if (!contextAlive()) return;
+  try {
+    await chrome.storage.sync.set({ [LANGS2_KEY]: code });
+  } catch {
+    /* ignore */
   }
 }
 

@@ -325,11 +325,38 @@ thing the extension asks the server for. Its heading, message, colour and links 
 admin-supplied and rendered **inside somebody else's page** — as text, never markup, with
 the colour only ever an inline style value the server has validated as `#rrggbb`.
 
-**One language, not several.** It lives in `storage.sync` under `langs` and defaults to `en`; the
-loader still accepts the array earlier versions wrote and takes its first entry, so nobody's
-choice is silently reset. The API takes exactly one language and rejects codes it does not
-offer. Changing the language re-runs the search rather than clearing it — the query has not
-changed and the search itself is cached upstream, so it costs only the detail fetches.
+**One language per search, and a second fetched on demand.** The search language lives in
+`storage.sync` under `langs` and defaults to `en`; the loader still accepts the array earlier
+versions wrote and takes its first entry, so nobody's choice is silently reset. The API takes
+exactly one language and rejects codes it does not offer. Changing it re-runs the search
+rather than clearing it — the query has not changed and the search itself is cached upstream,
+so it costs only the detail fetches.
+
+`langs2` holds the **second** track's language, and it is deliberately not part of the
+search. See below.
+
+### Loading a pair
+
+With dual subtitles on, the Find tab offers both slots:
+
+- Every result row's tracks get **1st / 2nd** buttons instead of one *Use*. `loadTrack` takes
+  an explicit slot, and the Find tab always passes one — "load this as the second subtitle"
+  must not depend on having remembered to flip the selector at the top of a scrolled panel.
+- Each release also gets **+ 2nd**, which fetches *that release* in the second language and
+  loads it into the secondary slot. The same release is the one most likely to share its
+  timing, so once the first track is aligned the second often needs nothing.
+
+**The second language is fetched per release, on press — never for the whole page.** That is
+a rate-limit constraint, not a preference. Expanding all five results in a second language
+would double the upstream cost of every search, and `/api/release` carries three times the
+search allowance rather than five times (`FETCH_MULTIPLIER` in `web/lib/rateLimit.ts`), so a
+page of five would spend it within the hour. `find.tracks2` is therefore populated one
+release at a time, and cached **even when empty** so a release with nothing in that language
+is not refetched on every press.
+
+`language2` falls back to the primary rather than to English — proposing a language the user
+does not read is worse than proposing the one they just picked. Equal languages are a
+harmless state: the **+ 2nd** button simply does not appear until they differ.
 
 Results are paged, five per page, and every release on a page arrives expanded. That bound is
 the point: without it a search for a popular film meant thirty-odd detail fetches against

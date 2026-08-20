@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { Release } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/api-types';
-import { selectSlotId, usePanel, trackKey } from '@/panel/store';
+import { usePanel, trackKey } from '@/panel/store';
+import { languageName } from '@/lib/languages';
 import { Button, TextInput } from '@/panel/components/ui';
 import { LanguagePicker } from '@/panel/components/LanguagePicker';
 import { SeriesBrowser } from '@/panel/components/SeriesBrowser';
@@ -27,7 +28,8 @@ export function FindTab() {
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
   const dual = usePanel((s) => s.dual);
-  const slotId = usePanel(selectSlotId);
+  const language2 = usePanel((s) => s.language2);
+  const setLanguage2 = usePanel((s) => s.setLanguage2);
 
   const searching = find.status === 'searching';
 
@@ -37,14 +39,6 @@ export function FindTab() {
           TVmaze has no films, so for a film the box below is still typed into directly. */}
       <SeriesBrowser />
 
-      {/* Loading a result replaces whichever track is selected, which is destructive and
-          easy to do by accident once there are two. Say so before the button, not after. */}
-      {dual.enabled && (
-        <p className="rounded border border-white/10 bg-black/20 px-2 py-1 text-[10px] text-white/45">
-          Results load into the{' '}
-          <span className="text-sky-300">{slotId === 0 ? 'primary' : 'secondary'}</span>.
-        </p>
-      )}
       <div className="flex gap-1.5">
         <TextInput
           value={find.query}
@@ -56,6 +50,25 @@ export function FindTab() {
         />
         <LanguagePicker selected={language} onChange={setLanguage} />
       </div>
+
+      {/* The second language sits below the search box rather than beside it, because it
+          is not part of the query: the search runs in the first language and the second is
+          fetched per release, on demand. Pairing them in one row would suggest otherwise. */}
+      {dual.enabled && (
+        <div className="flex items-center gap-1.5 rounded border border-white/10 bg-black/20 px-2 py-1">
+          <span className="text-[10px] text-white/45">Second subtitle</span>
+          <div className="ml-auto">
+            <LanguagePicker selected={language2} onChange={setLanguage2} />
+          </div>
+        </div>
+      )}
+
+      {dual.enabled && language2 === language && (
+        <p className="text-[10px] leading-relaxed text-white/35">
+          Both tracks are set to {languageName(language)}. Pick a different second language
+          to load a pair.
+        </p>
+      )}
 
       <Button
         size="sm"
@@ -188,6 +201,10 @@ function ReleaseRow({ release }: { release: Release }) {
   const find = usePanel((s) => s.find);
   const toggleRelease = usePanel((s) => s.toggleRelease);
   const loadTrack = usePanel((s) => s.loadTrack);
+  const loadReleaseInto = usePanel((s) => s.loadReleaseInto);
+  const dual = usePanel((s) => s.dual);
+  const language = usePanel((s) => s.language);
+  const language2 = usePanel((s) => s.language2);
 
   const tracks = find.tracks[release.id];
   // Everything on a page arrives expanded, so a row starts open unless its fetch failed.
@@ -235,19 +252,103 @@ function ReleaseRow({ release }: { release: Release }) {
                   <span className="min-w-0 flex-1 truncate text-[11px] text-white/70">
                     {track.name}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void loadTrack(track)}
-                    disabled={find.loading !== null}
-                  >
-                    {loading ? 'Loading…' : 'Use'}
-                  </Button>
+
+                  {/* One button becomes two once there are two slots. An explicit target
+                      beats "wherever the selector happens to point" — the selector is at
+                      the top of the panel and this is the bottom of a scrolled list. */}
+                  {dual.enabled ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Load as the first subtitle"
+                        onClick={() => void loadTrack(track, 0)}
+                        disabled={find.loading !== null}
+                      >
+                        {loading && find.loadingSlot === 0 ? '…' : '1st'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="Load as the second subtitle"
+                        onClick={() => void loadTrack(track, 1)}
+                        disabled={find.loading !== null}
+                      >
+                        {loading && find.loadingSlot === 1 ? '…' : '2nd'}
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void loadTrack(track)}
+                      disabled={find.loading !== null}
+                    >
+                      {loading ? 'Loading…' : 'Use'}
+                    </Button>
+                  )}
                 </div>
               );
             })}
+
+          <SecondLanguage
+            release={release}
+            enabled={dual.enabled && language2 !== language}
+            language2={language2}
+            onLoad={() => void loadReleaseInto(release, 1)}
+          />
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * "Also load this release in the second language."
+ *
+ * The pairing the whole feature exists for. The *same* release in another language is the
+ * one most likely to share its timing, so once the first track is aligned the second
+ * usually needs nothing — which is not true of a track picked from a different upload.
+ *
+ * Fetched only when pressed. Expanding every result in a second language would double the
+ * upstream cost of every search, and `/api/release` has three times the search allowance,
+ * not five times — a page of five would spend it within the hour.
+ */
+function SecondLanguage({
+  release,
+  enabled,
+  language2,
+  onLoad,
+}: {
+  release: Release;
+  enabled: boolean;
+  language2: string;
+  onLoad: () => void;
+}) {
+  const find = usePanel((s) => s.find);
+
+  if (!enabled) return null;
+
+  const fetching = find.fetchingSecond === release.id;
+  const known = find.tracks2[release.id];
+  const empty = known !== undefined && known.length === 0;
+
+  return (
+    <div className="mt-0.5 flex items-center gap-2 border-t border-white/5 pt-1">
+      <span className="min-w-0 flex-1 truncate text-[10px] text-white/40">
+        {empty
+          ? `No ${languageName(language2)} for this release`
+          : `Same release in ${languageName(language2)}`}
+      </span>
+      <Button
+        size="sm"
+        variant="ghost"
+        title={`Load this release's ${languageName(language2)} subtitle as the second one`}
+        onClick={onLoad}
+        disabled={empty || fetching || find.loading !== null}
+      >
+        {fetching ? '…' : '+ 2nd'}
+      </Button>
+    </div>
   );
 }
