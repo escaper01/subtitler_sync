@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { TabState } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
-import { apiBase } from '@/lib/api';
 import { askBackground } from '@/lib/messaging';
 import { hostOf, isAllowed, loadSites, onSitesChanged } from '@/lib/sites';
 import { Button } from '@/panel/components/ui';
 import { SitesEditor } from '@/panel/components/SitesEditor';
-import { LicenseBox } from '@/popup/LicenseBox';
+import { DonateLine } from '@/popup/DonateLine';
 
 /**
  * The toolbar popup.
@@ -20,8 +19,6 @@ interface Current {
   tabId: number | null;
   host: string | null;
   state: TabState;
-  /** Absolute, because the popup opens it in a new tab. */
-  pricingUrl: string;
 }
 
 export function Popup() {
@@ -43,13 +40,7 @@ export function Popup() {
           : ((await askBackground<TabState>({ kind: 'popup:get-tab-state', tabId })) ??
             EMPTY_TAB_STATE);
 
-      const base = await apiBase();
-      setCurrent({
-        tabId,
-        host: hostOf(tab?.url),
-        state,
-        pricingUrl: new URL('pricing', `${base}/`).toString(),
-      });
+      setCurrent({ tabId, host: hostOf(tab?.url), state });
     })();
   }, []);
 
@@ -66,9 +57,7 @@ export function Popup() {
       </header>
 
       <div className="space-y-3 px-3 py-3">
-        <LicenseBox pricingUrl={current.pricingUrl} />
-
-        <SitesEditor currentHost={current.host} />
+        <SitesEditor currentHost={current.host} compact />
 
         <div className="flex items-center gap-2 border-t border-white/10 pt-2.5">
           <span className="flex-1 text-[10px] leading-tight text-white/40">
@@ -83,6 +72,8 @@ export function Popup() {
             Toggle panel
           </Button>
         </div>
+
+        <DonateLine />
       </div>
     </div>
   );

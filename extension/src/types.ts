@@ -121,16 +121,14 @@ export type ToBackground =
   | { kind: 'api:release'; path: string; lang: string }
   | { kind: 'api:download'; path: string }
   /**
-   * The licence key: what state it is in, and setting or clearing it.
+   * The admin-controlled donation prompt, or nothing.
    *
-   * `auth:set-key` is sent by the popup, which is the only surface that takes the key —
-   * the panel runs inside somebody else's page and should never hold one.
+   * There were three `auth:*` variants beside this one, carrying a licence key. They went
+   * with the paywall: the extension holds no credential, and the only thing it still sends
+   * is an anonymous install id attached inside `lib/api.ts` — never passed through a
+   * message, because no caller has any business choosing it.
    */
-  | { kind: 'auth:state' }
-  | { kind: 'auth:set-key'; key: string }
-  | { kind: 'auth:clear' }
-  /** The admin-controlled upgrade prompt, or nothing. */
-  | { kind: 'announcement' };
+  | { kind: 'donate' };
 
 /** background → content script */
 export type ToContent = { kind: 'toggle-panel' };

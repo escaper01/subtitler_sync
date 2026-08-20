@@ -186,6 +186,7 @@ src/
 
   background/
     service-worker.ts    message router, per-tab detection hints for the popup
+    install.ts           the anonymous per-install id — SERVICE WORKER ONLY
 
   content/
     content-script.ts    entry: runs in EVERY frame, gates on the allowlist, owns the session
@@ -206,7 +207,7 @@ tools/make-icons.mjs     the generator
 |---|---|---|
 | Every frame | `content/content-script.ts`, `lib/sites.ts` | `all_frames: true`, `document_start`; stands down unless the site is allowed |
 | The video's frame | `content/overlay.ts`, `content/panel-host.ts`, `panel/*` | whichever frame won detection |
-| Service worker |  `background/service-worker.ts` | the only context that can see the whole tab |
+| Service worker |  `background/service-worker.ts`, `background/install.ts`, `lib/api.ts` | the only context that can see the whole tab, and the only one that may `fetch` |
 | Extension page | `popup/*` | the toolbar popup |
 
 ---
@@ -224,6 +225,7 @@ content script  --sendToBackground-->  background     video-seen, video-detected
 background      --broadcastToTab---->  content script toggle-panel
 popup           --askBackground----->  background     tab state, toggle-panel relay
 panel           --askBackground----->  background     api:search, api:release, api:download
+panel/popup     --askBackground----->  background     donate
 ```
 
 That last line is not a stylistic choice. **The panel cannot call the API itself:** an MV3
@@ -287,32 +289,37 @@ The search box is *seeded* from the tab's title via `guessSearchTitle`, never se
 automatically: the guess is often right and sometimes comically wrong, and the user is looking
 straight at an editable input either way.
 
-**Search is a paid feature; loading your own file is not, and never will be.** `SubtitlesTab`
-touches none of the auth code — that is the promise the product rests on.
+**Search is free, like everything else.** There is no licence key, no sign-in and no
+credential of any kind — `background/auth.ts`, `popup/LicenseBox.tsx` and
+`panel/components/AccountLine.tsx` are gone, along with the `auth:*` messages.
 
-**The licence key is the whole credential.** There is no sign-in: the user buys from Lemon
-Squeezy, which emails them a key, and they paste it into the toolbar popup (`LicenseBox`).
-The key cannot be entered in the panel — that is a content script inside somebody else's
-document, under their CSP, and a credential has no business being typed there. The popup is
-a real extension page, which is why it owns this.
+**What survived is `X-Subtitler-Install`**, and its job changed. It used to be what the
+server counted devices by; it is now what the server's *rate limiter* counts against, and
+that limiter is the only thing standing in front of the search API. So:
 
-The key lives in `chrome.storage.local` — **never `sync`**, which would push a bearer
-credential to Google's servers and every machine on the profile. `lib/api.ts` attaches it as
-`X-Subtitler-Key` in **both** of its fetch call sites; missing the hand-rolled one inside
-`downloadSubtitle` is the easy mistake.
+- It is attached in `lib/api.ts`, in **both** fetch call sites. Missing the hand-rolled one
+  inside `downloadSubtitle` is the easy mistake and has been made before.
+- It lives in `chrome.storage.local` — **never `sync`**, which would push it to every
+  machine on the profile and make several browsers share one rate-limit bucket.
+- **It must not be regenerated.** A fresh id per service-worker restart does not evade the
+  limiter — an unidentified caller lands in a shared `anonymous` bucket with everyone else
+  — it merely scatters the user's own history.
+- It is never passed through a message. `background/install.ts` resolves it inside the
+  worker, because no caller has any business choosing it.
 
-Alongside it goes `X-Subtitler-Install`, a random per-install id generated once on first use
-and kept in `storage.local` beside the key. It is what the server's device limit counts, so
-it identifies the *installation*, not the person — and it must not be regenerated, or every
-service-worker restart would spend another of the user's two devices.
-
-The manifest still pins a `key`, but only for a stable Web Store identity now; the
-`externally_connectable` handoff it used to exist for is gone. Back up `extension/key.pem`
+The manifest still pins a `key`, for a stable Web Store identity. Back up `extension/key.pem`
 and upload the same key to the Store.
 
-**The panel never decides on its own that someone is locked out.** It renders whatever the
-server returned — `find.code` and `find.action` beside the existing `find.error`. Two sources
-of truth drift apart; one does not.
+**The panel never decides on its own that a request will be refused.** It renders whatever
+the server returned — `find.code` and `find.action` beside `find.error`. Two sources of
+truth drift apart; one does not. The only refusal a well-behaved client can now hit is
+`rate_limited`, and `Refusal` in `FindTab` renders it amber rather than red: waiting is not
+the same as broken.
+
+**The donation prompt** (`PanelBanner`, and `DonateLine` in the popup) is the one other
+thing the extension asks the server for. Its heading, message, colour and links are all
+admin-supplied and rendered **inside somebody else's page** — as text, never markup, with
+the colour only ever an inline style value the server has validated as `#rrggbb`.
 
 **One language, not several.** It lives in `storage.sync` under `langs` and defaults to `en`; the
 loader still accepts the array earlier versions wrote and takes its first entry, so nobody's

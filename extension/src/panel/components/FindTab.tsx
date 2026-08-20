@@ -61,29 +61,35 @@ export function FindTab() {
 /**
  * What the server said, and what to do about it.
  *
- * The panel never decides on its own that someone is locked out — it renders whatever came
- * back from the request. Two sources of truth drift apart; one does not. So the query box
- * stays usable and the reason arrives only once a search is actually attempted.
+ * The panel never decides on its own that a request will be refused — it renders whatever
+ * came back. Two sources of truth drift apart; one does not. So the query box stays usable
+ * and the reason arrives only once a search is actually attempted.
+ *
+ * This used to carry a case per paywall state — signed out, no subscription, lapsed,
+ * device limit. None of those exist now; the only refusal a well-behaved client can hit is
+ * the rate limiter, which is temporary and needs no button. The `action` branch is kept
+ * anyway, because it is server-owned: it lets a refusal grow a link without shipping an
+ * extension update through review.
  */
 function Refusal() {
   const find = usePanel((s) => s.find);
   if (!find.error) return null;
 
-  // A device limit has no button worth offering — the fix is on another machine, not this
-  // one — so it reads as a plain explanation.
-  if (find.code === 'device_limit') {
+  // Amber, not red: waiting is not the same as broken, and red for something that fixes
+  // itself in a minute teaches people to ignore red.
+  if (find.code === 'rate_limited') {
     return (
       <div className="rounded border border-amber-400/30 bg-amber-500/10 px-2 py-2">
         <p className="text-[11px] leading-relaxed text-white/85">{find.error}</p>
         <p className="mt-1 text-[10px] text-white/45">
-          Open the extension menu on the machine you no longer use and remove the key there.
+          Loading your own subtitle file is never limited.
         </p>
       </div>
     );
   }
 
-  // A plain error is just a sentence. A gated one is a sentence plus a way out.
-  if (!find.code || !find.action) {
+  // A plain error is just a sentence. One the server attached a button to gets the button.
+  if (!find.action) {
     return <p className="text-[11px] text-red-300">{find.error}</p>;
   }
 

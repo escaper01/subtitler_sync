@@ -4,12 +4,10 @@ import { broadcastToTab, onMessage } from '@/lib/messaging';
 import {
   apiBase,
   downloadSubtitle,
-  fetchAnnouncement,
-  fetchMe,
+  fetchDonatePrompt,
   fetchRelease,
   searchSubtitles,
 } from '@/lib/api';
-import { clearKey, saveKey } from '@/background/auth';
 
 /**
  * Service worker.
@@ -109,22 +107,8 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
       return downloadSubtitle(message.path);
     }
 
-    case 'auth:state': {
-      return fetchMe();
-    }
-
-    case 'announcement': {
-      return fetchAnnouncement();
-    }
-
-    case 'auth:set-key': {
-      // Stored, then immediately checked, so the popup can say whether it actually works
-      // rather than just "saved".
-      return saveKey(message.key).then(() => fetchMe());
-    }
-
-    case 'auth:clear': {
-      return clearKey().then(() => ({ ok: true }));
+    case 'donate': {
+      return fetchDonatePrompt();
     }
 
     case 'popup:get-tab-state': {

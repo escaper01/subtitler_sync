@@ -72,20 +72,17 @@ export interface ReleaseResponse {
 /**
  * Why a request was refused, in a form the client can branch on.
  *
- * The HTTP status is not enough: "sign in", "subscribe" and "your subscription lapsed" all
- * need different buttons, and some corporate proxies mangle a 402 anyway. Clients branch
- * on this, never on the status.
+ * The HTTP status is not enough: some corporate proxies mangle the less common ones, and a
+ * client that wants to show a different message per reason should not be parsing prose.
+ * Clients branch on this, never on the status.
+ *
+ * This list used to be twice as long. `not_signed_in`, `unknown_key`, `device_limit`,
+ * `no_subscription`, `subscription_expired` and `account_disabled` went with the paywall —
+ * there is no credential to be wrong about any more. An extension still sending the old
+ * ones simply never receives them.
  */
 export type ApiErrorCode =
-  /** No licence key was sent at all. */
-  | 'not_signed_in'
-  /** A key was sent, but we do not recognise it — or it has been revoked. */
-  | 'unknown_key'
-  /** The key is good, but it is already in use on as many devices as it allows. */
-  | 'device_limit'
-  | 'no_subscription'
-  | 'subscription_expired'
-  | 'account_disabled'
+  /** Too many searches, too fast. The only refusal a well-behaved client can now hit. */
   | 'rate_limited'
   | 'bad_request'
   | 'upstream'
@@ -101,27 +98,40 @@ export interface ApiError {
   /**
    * What the client should offer to do about it.
    *
-   * Server-owned on purpose: where "Subscribe" points can change without shipping an
+   * Server-owned on purpose: where the button points can change without shipping an
    * extension update through Web Store review, which takes days.
    */
   action?: { label: string; url: string };
 }
 
-/** What `/api/me` answers. Lets the panel label its button before a request fails. */
-export interface MeResponse {
-  signedIn: boolean;
-  email: string | null;
-  entitled: boolean;
-  /** ISO date, or null when there has never been a subscription. */
-  entitledUntil: string | null;
-  source: string | null;
+/* ------------------------------------------------------------------ donations */
+
+/** One "support this" button, as configured at /admin/donations. */
+export interface DonationLinkView {
+  /** `paypal` | `kofi` | `buymeacoffee` | `patreon` | ... — picks an icon, nothing more. */
+  provider: string;
+  label: string;
+  /** Validated `http`/`https` server-side. Never rendered as anything but an href. */
+  url: string;
 }
 
-/** The donation prompt, as configured from the dashboard. */
-export interface Announcement {
+/**
+ * What `GET /api/donate` answers.
+ *
+ * Replaces the old upgrade prompt, and is the only thing the extension now asks the server
+ * for besides subtitles. Everyone sees the same answer — there are no subscribers to
+ * exempt.
+ *
+ * Every string here is admin-supplied and is rendered by the extension **inside other
+ * people's pages**. Render as text, never as markup, and use `color` only as an inline
+ * style value — it is validated as `#rrggbb` server-side precisely so it can be.
+ */
+export interface DonatePrompt {
   enabled: boolean;
+  heading: string;
   message: string;
   /** Validated `#rrggbb` server-side. Only ever used as an inline style value. */
   color: string;
-  url: string | null;
+  /** Already filtered to the visible ones, in the order the dashboard set. */
+  links: DonationLinkView[];
 }

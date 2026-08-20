@@ -1,20 +1,23 @@
 import type {
-  Announcement,
   ApiError,
   ApiErrorCode,
-  MeResponse,
+  DonatePrompt,
   ReleaseResponse,
   SearchResponse,
 } from '@/lib/api-types';
-import { installId, loadKey } from '@/background/auth';
+import { installId } from '@/background/install';
 
 /**
  * The subtitle search API client. **Runs in the service worker only.**
  *
  * Not in the content script, and not in the panel: an MV3 content script's `fetch` is
  * subject to the page's CORS rules, while the worker's is governed by the extension's host
- * permissions. Everything therefore goes panel → worker → API, which is also where a
- * licence key would be attached once there is one.
+ * permissions. Importing this from the panel produces code that works on your test site and
+ * fails on somebody else's. Everything therefore goes panel → worker → API.
+ *
+ * **Nothing here authenticates.** There is no licence key and no session; the API is open
+ * and rate-limited instead. The one header that still matters is `X-Subtitler-Install`,
+ * which is what the server's limiter counts against — see `background/install.ts`.
  */
 
 /**
@@ -33,7 +36,7 @@ const TIMEOUT_MS = 20_000;
  * A failure, with enough detail for the panel to offer a button rather than red text.
  *
  * `code` and `action` are optional and come straight from the server: an older build of
- * this extension simply ignores them, and where "Subscribe" points can change without
+ * this extension simply ignores them, and where a button points can change without
  * shipping an update through Web Store review.
  */
 export interface ApiFailure {
@@ -74,23 +77,20 @@ export async function apiBase(): Promise<string> {
 }
 
 /**
- * The licence key, and which installation is asking.
+ * Which installation is asking.
  *
- * Headers rather than a cookie: the worker's `fetch` is not attached to any browsing
+ * A header rather than a cookie: the worker's `fetch` is not attached to any browsing
  * context, and headers keep the API's CORS wide open *without* credentials — which is what
  * makes `Access-Control-Allow-Origin: *` safe there.
  *
- * These two names specifically, because the API already allowlists them in its preflight.
- * The install id is what the server counts devices by, so a request without one cannot be
- * limited — send it even when there is no key, since the search log uses it too.
+ * This name specifically, because the API allowlists it in its preflight. It goes on
+ * **every** call that can be rate-limited, which is search, release and download alike —
+ * omitting it does not evade the limiter, it just puts this user in the shared anonymous
+ * bucket alongside everyone else who omitted it.
  */
-async function authHeaders(): Promise<Record<string, string>> {
-  const [key, install] = await Promise.all([loadKey(), installId()]);
-
-  const headers: Record<string, string> = {};
-  if (key) headers['X-Subtitler-Key'] = key;
-  if (install) headers['X-Subtitler-Install'] = install;
-  return headers;
+async function callerHeaders(): Promise<Record<string, string>> {
+  const install = await installId();
+  return install ? { 'X-Subtitler-Install': install } : {};
 }
 
 /**
@@ -106,7 +106,7 @@ async function request<T>(path: string, params: Record<string, string>): Promise
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: await authHeaders(),
+      headers: await callerHeaders(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
@@ -142,23 +142,15 @@ export async function fetchRelease(
 }
 
 /**
- * Who the extension is signed in as, and whether they may search.
- *
- * Never refuses — a signed-out caller gets a truthful "no". Lets the panel label its
- * button before someone types a title and presses one that was never going to work.
- */
-export async function fetchMe(): Promise<ApiResult<MeResponse>> {
-  return request<MeResponse>('api/me', {});
-}
-
-/**
  * The donation prompt, if the dashboard has one switched on.
  *
- * Whether it applies is decided server-side from the token, so a subscriber is never asked
- * for money they have already given.
+ * Everyone gets the same answer — there are no subscribers to exempt. Every string it
+ * returns is admin-supplied and gets rendered by the panel **inside somebody else's page**,
+ * so render it as text and use `color` only as an inline style value; the server has
+ * validated it as `#rrggbb` precisely so that it can be.
  */
-export async function fetchAnnouncement(): Promise<ApiResult<Announcement>> {
-  return request<Announcement>('api/announcement', {});
+export async function fetchDonatePrompt(): Promise<ApiResult<DonatePrompt>> {
+  return request<DonatePrompt>('api/donate', {});
 }
 
 /** Fetch a subtitle's text. Returns the text itself, not JSON. */
@@ -172,17 +164,17 @@ export async function downloadSubtitle(
   try {
     // The header goes here too. This fetch is hand-rolled rather than going through
     // `request<T>()` because the response is text, not JSON — which makes it the easy one
-    // to forget when anything about auth changes.
+    // to forget whenever anything about the headers changes. It has been missed before.
     response = await fetch(url, {
-      headers: await authHeaders(),
+      headers: await callerHeaders(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch {
     return { ok: false, error: 'Could not download that subtitle.' };
   }
 
-  // The same reader as `request<T>()`, so a gated download says "subscribe" rather than
-  // "could not download that subtitle (402)".
+  // The same reader as `request<T>()`, so a rate-limited download says "slow down a
+  // moment" rather than "could not download that subtitle (429)".
   if (!response.ok) return readError(response);
 
   const header = response.headers.get('X-Subtitle-Filename');

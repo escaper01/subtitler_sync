@@ -10,7 +10,6 @@ import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
 import { SitesTab } from '@/panel/components/SitesTab';
 import { PanelBanner } from '@/panel/components/PanelBanner';
-import { AccountLine } from '@/panel/components/AccountLine';
 
 /** How often the panel samples playback position. Enough for a smooth highlight. */
 const TICK_MS = 120;
@@ -175,9 +174,6 @@ function Panel() {
           <kbd className="text-white/50">S</kbd> sync · <kbd className="text-white/50">G</kbd>/
           <kbd className="text-white/50">H</kbd> nudge ·{' '}
           <kbd className="text-white/50">Shift+S</kbd> hide
-        </span>
-        <span className="ml-auto">
-          <AccountLine />
         </span>
       </footer>
     </div>
