@@ -1,27 +1,48 @@
 # Subtitler
 
-Two independent projects that ship together.
+Three independent projects that ship together.
 
 ```
-extension/   Chrome/Edge MV3 extension — the subtitle overlay and sync tool
-web/         Next.js app — the subtitle search API, and (later) the admin dashboard
+extension/        Chrome/Edge MV3 extension — the full build: overlay, sync, dual
+                  subtitles, subtitle search and the TVmaze series browser
+extension-lite/   the same, minus search — this is the Chrome Web Store listing
+web/              Next.js app — the subtitle search API, the public site, the admin dashboard
 ```
 
-**Setting it up, or deploying it: see [`SETUP.md`](./SETUP.md).** That is the ordered
-sequence, from an empty machine to a live extension. The order in its Part C matters — turning
-enforcement on too early breaks search for everyone already installed.
+**Setting it up, or deploying it: see [`SETUP.md`](./SETUP.md).**
 
-Each has its own `package.json`, its own install, and its own `CLAUDE.md` with the detail that
-matters when working inside it. **There is no workspace tooling** — `npm install` in each folder,
-separately. Read `extension/CLAUDE.md` before touching the extension; it documents constraints
-that are not guessable from the code.
+Each has its own `package.json` and its own install. **There is no workspace tooling** —
+`npm install` in each folder, separately. Read `extension/CLAUDE.md` before touching either
+extension; it documents constraints that are not guessable from the code.
 
 ---
 
-## How they fit together
+## Why there are two extensions
 
-The extension can load a subtitle file the user picked, which needs nothing from the server. It
-can also *search* for one, which goes through `web`:
+Subtitle search is what draws Web Store review attention, so the published listing does not
+have it. `extension-lite/` is that build: load a subtitle file you already have, fix its
+timing, show two languages at once. `extension/` keeps search and the series browser and is
+downloaded from the website, loaded unpacked.
+
+They are **separate folders with a large byte-identical overlap**, kept in step by
+`tools/sync-shared.mjs`:
+
+```bash
+node tools/sync-shared.mjs           # copy extension/ -> extension-lite/
+node tools/sync-shared.mjs --check   # fail on drift — runs inside npm run check in BOTH
+```
+
+**Fix it in `extension/`, run the sync, commit both.** Never edit a shared file in
+`extension-lite/`; the next sync overwrites it silently. The files that are supposed to
+differ are listed in that script, so a difference is a decision rather than an oversight.
+
+The two builds carry **different signing keys** and therefore different ids, which is what
+lets both be installed at once.
+
+## How the extension and the web app fit together
+
+The extension can load a subtitle file the user picked, which needs nothing from the server.
+The full build can also *search* for one, which goes through `web`:
 
 ```
 panel  →  service worker  →  web/api/*  →  subtitlecat.com
@@ -29,69 +50,70 @@ panel  →  service worker  →  web/api/*  →  subtitlecat.com
 
 Three things about that chain are deliberate:
 
-- **The extension never calls subtitlecat directly.** The parsing lives server-side, so when the
-  site changes its markup the fix is a deploy rather than an extension update every user has to
-  install. It is also where the licence check will go.
-- **The panel never calls the API directly either.** An MV3 content script's `fetch` obeys the
-  *page's* CORS rules; the service worker's obeys the extension's host permissions. So requests
-  are relayed through the worker.
-- **Subtitle files are relayed, not redirected.** The upstream URL never reaches the client, so
-  there will be no link to copy around the paywall once there is one.
+- **The extension never calls subtitlecat directly.** The parsing lives server-side, so when
+  the site changes its markup the fix is a deploy rather than an extension update every user
+  has to install.
+- **The panel never calls the API directly either.** An MV3 content script's `fetch` obeys
+  the *page's* CORS rules; the service worker's obeys the extension's host permissions. So
+  requests are relayed through the worker.
+- **Subtitle files are relayed, not redirected.** The upstream URL never reaches the client.
+
+**TVmaze is the exception, deliberately.** The series browser calls `api.tvmaze.com` straight
+from the service worker rather than through `web/`. No API key, stable contract, and a
+browser whose only job is to fill in a text box should not stop working when our server does.
+It still runs in the worker, for the CORS reason above.
+
+**`extension-lite/` makes exactly one request:** `GET /api/donate`. Worth remembering when
+writing the Store listing — "no network access" would be false.
 
 ## The shared contract
 
-`api-types.ts` and `languages.ts` exist **twice** — once in `web/lib/`, once in
-`extension/src/lib/` — because the two folders are independent. Nothing enforces that they match.
+`api-types.ts` exists **three times** — `web/lib/`, `extension/src/lib/`,
+`extension-lite/src/lib/` — because the folders are independent. `languages.ts` exists twice
+(`web/lib/` and `extension/src/lib/`; the lite build has no languages).
 
-**If you change one, change the other in the same commit.** A drifted language table means a code
-the user can tick and never receive results for; a drifted contract fails at runtime, in the one
-place where neither typechecker is looking.
+**If you change one, change the others in the same commit.** Nothing enforces it. A drifted
+language table means a code the user can tick and never receive results for; a drifted
+contract fails at runtime, in the one place where no typechecker is looking.
 
-## The paywall, in one paragraph
+## There is no money in this codebase
 
-Subtitle **search** needs a subscription; loading your own `.srt` or `.vtt` stays free forever
-and touches none of that code. **The licence key is the whole credential to the extension** —
-it never signs in. The key is pasted into the popup and travels as `X-Subtitler-Key` on every
-request alongside `X-Subtitler-Install`, an anonymous per-install id the device limit counts.
-The server decides — on `search`, `release` **and** `download` — and the extension's UI only
-renders whatever answer came back. Nothing shipped inside the extension is trusted, because
-anything shipped inside it can be edited.
+There was: an entitlement ledger, licence keys, device limits, trials, customer accounts and
+a paywall on search. **All of it was removed.** The extension carries no credential, there is
+nothing to sign in to, and every feature is free.
 
-Customers **do** have accounts on the website: Google sign-in, which is where the trial is
-granted and where the account page lives. That session never reaches the extension.
+One consequence matters more than the rest and is easy to miss:
 
-**There is no payment provider.** Lemon Squeezy was removed after they declined the product,
-and nothing has replaced it — entitlements are granted by hand from `/admin` for now. What
-survived is the part worth keeping: the entitlement ledger, the keys, the device limit and the
-gate are all provider-agnostic, so a replacement is a webhook route and a checkout URL rather
-than a rewrite. `web/CLAUDE.md` sets out what one has to supply.
+> **Nothing authenticates the search API any more.** `requireEntitlement` ran on `search`,
+> `release` *and* `download`. What replaced it is `web/lib/rateLimit.ts`, keyed on the
+> extension's anonymous install id and a hashed IP. That limiter is the whole guard. A change
+> that weakens it is not a tuning change.
 
-**It is switched off until you turn it on.** `ENFORCE_ENTITLEMENT` defaults to false so an
-extension build that sends the header can reach users before the server starts requiring it.
-Enforcing first breaks search for everyone already installed, with no way to fix it from the
-server.
+Monetisation is donations: `DonationLink` rows edited at `/admin/donations`, rendered on the
+site and inside the extension panel. Links to PayPal, Ko-fi or wherever else — there is no
+payment provider, no checkout, and nothing is unlocked by donating. `web/lib/donate.ts`
+validates every URL and colour on the way in *and* on the way out, because those values are
+rendered inside pages we do not control.
+
+`web/CLAUDE.md` sets out what a replacement paywall would have to plug into, if one is ever
+wanted.
 
 ## Status
 
-Working: the overlay, the sync tool, the site allowlist, subtitle search with one-click
-loading, the public site, the pricing page, customer accounts through Google sign-in with a
-7-day trial, licence keys, the device limit, device-signal matching to flag duplicate
-accounts, the admin dashboard (overview, reports, requests, users, licences, settings, API
-reference), and an admin-editable upgrade prompt on both surfaces.
+Working: the overlay, the sync tool, **two subtitle tracks at once with independent
+timing**, the site allowlist, subtitle search with one-click loading, **the TVmaze series
+browser** (pick a show, season and episode; it remembers where you got to), the public site,
+the donation page, the admin dashboard (overview, reports, requests, donations, settings, API
+reference), and the donation prompt on both surfaces.
 
-**Not working: taking money.** There is no payment provider — see the paragraph above.
-
-Prices, plan details, rate limits, the trial length and the default device limit are **rows in
-the database**, edited at `/admin/settings`. They were constants; a price in two places drifts,
-and a limit that needs a deploy to change is a limit you cannot use in an emergency.
+Rate limits and the donation prompt's wording are **rows in the database**, edited at
+`/admin/settings`. A limit that needs a deploy to change is one you cannot use in an
+emergency — which matters more now that it is the only thing in front of the API.
 
 Setting up `web/` from scratch is `npm install && cp .env.example .env && npm run setup &&
 npm run db:seed` — Postgres runs in Docker (`web/docker-compose.yml`) and the admin list is a
-table, seeded from `web/prisma/seed.mjs`. The only values you must fetch by hand are the Google
-OAuth client id and secret, and they gate nothing but `/admin`. See `web/CLAUDE.md`.
-
-Going live is four ordered steps — deploy, repoint, publish, *then* enforce — set out in
-[`SETUP.md`](./SETUP.md) Part C. The order is the whole point.
+table, seeded from `web/prisma/seed.mjs`. The only values you must fetch by hand are the
+Google OAuth client id and secret, and they gate nothing but `/admin`. See `web/CLAUDE.md`.
 
 The privacy policy lives at `/privacy` and is written from what the code actually stores.
 **If you change what is collected, change that page in the same commit** — the Web Store

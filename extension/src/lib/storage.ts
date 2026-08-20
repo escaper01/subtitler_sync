@@ -1,17 +1,19 @@
-import type { DualLayout, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
-import { DEFAULT_DUAL_LAYOUT, IDENTITY_SYNC } from '@/types';
+import type { DualLayout, PanelTab, SubtitleStyle, SubtitleTrack, SyncState } from '@/types';
+import { DEFAULT_DUAL_LAYOUT, IDENTITY_SYNC, PANEL_TABS } from '@/types';
 import { clampStyle, DEFAULT_STYLE, defaultSecondaryStyle } from '@/lib/style';
-import { DEFAULT_LANGUAGE, isKnownLanguage } from '@/lib/languages';
-import type { RememberedShow } from '@/lib/tv';
-import { MAX_REMEMBERED_SHOWS } from '@/lib/tv';
 import { contextAlive } from '@/lib/log';
 
 /**
- * Persistence.
+ * Persistence for everything the overlay needs.
  *
  * Appearance goes in `storage.sync` — it's small, and it should follow the user between
- * machines. Per-film state (the subtitle file and its timing) goes in `storage.local`,
+ * machines. Per-film state (the subtitle files and their timing) goes in `storage.local`,
  * because tracks are ~100 KB each and would blow through the sync quota immediately.
+ *
+ * **This file is shared verbatim with the search-free build**, which is why the search
+ * language and the remembered series live in `lib/searchStorage.ts` instead: an import
+ * only one of the two builds can satisfy would make this file un-shareable. See
+ * `tools/sync-shared.mjs`.
  */
 
 const STYLE_KEY = 'style';
@@ -19,9 +21,7 @@ const STYLE_KEY = 'style';
 const STYLE2_KEY = 'style2';
 const DUAL_KEY = 'dual';
 const PANEL_KEY = 'panel';
-const LANGS_KEY = 'langs';
 const MOVIE_PREFIX = 'movie:';
-const SHOWS_KEY = 'tv:recent';
 
 /**
  * Films to remember before evicting the least recently used.
@@ -56,7 +56,7 @@ export interface PanelPrefs {
   collapsed: boolean;
   x: number;
   y: number;
-  tab: 'subtitles' | 'find' | 'style' | 'sync' | 'sites';
+  tab: PanelTab;
 }
 
 export const DEFAULT_PANEL_PREFS: PanelPrefs = {
@@ -127,42 +127,6 @@ export async function saveDual(layout: DualLayout): Promise<void> {
   }
 }
 
-/* ------------------------------------------------------------------- language */
-
-/**
- * Which subtitle language to search in.
- *
- * In `storage.sync` alongside the style: it's one code, and the language you read
- * subtitles in does not change per machine.
- *
- * One language, not several. The API takes exactly one — a result list mixing languages
- * reads as noise, and the whole point of the filter is to cut the ~150 machine
- * translations each release carries down to the one that is any use.
- */
-export async function loadLanguage(): Promise<string> {
-  if (!contextAlive()) return DEFAULT_LANGUAGE;
-  try {
-    const stored = await chrome.storage.sync.get(LANGS_KEY);
-    const value = stored[LANGS_KEY] as unknown;
-
-    // Earlier versions stored an array. Take the first entry rather than resetting to
-    // English, so someone who had picked, say, Arabic keeps it.
-    const code = Array.isArray(value) ? value[0] : value;
-    return typeof code === 'string' && isKnownLanguage(code) ? code : DEFAULT_LANGUAGE;
-  } catch {
-    return DEFAULT_LANGUAGE;
-  }
-}
-
-export async function saveLanguage(code: string): Promise<void> {
-  if (!contextAlive()) return;
-  try {
-    await chrome.storage.sync.set({ [LANGS_KEY]: code });
-  } catch {
-    /* quota or offline — the picker still reflects the choice for this session */
-  }
-}
-
 /* ---------------------------------------------------------------- panel layout */
 
 export async function loadPanelPrefs(): Promise<PanelPrefs> {
@@ -170,7 +134,13 @@ export async function loadPanelPrefs(): Promise<PanelPrefs> {
   try {
     const stored = await chrome.storage.local.get(PANEL_KEY);
     const value = stored[PANEL_KEY] as Partial<PanelPrefs> | undefined;
-    return { ...DEFAULT_PANEL_PREFS, ...value };
+    const prefs = { ...DEFAULT_PANEL_PREFS, ...value };
+
+    // Both builds share this storage key and they do not have the same tabs. Without this,
+    // a profile that has run the other build opens on a tab that renders nothing.
+    if (!PANEL_TABS.includes(prefs.tab)) prefs.tab = DEFAULT_PANEL_PREFS.tab;
+
+    return prefs;
   } catch {
     return DEFAULT_PANEL_PREFS;
   }
@@ -180,53 +150,6 @@ export async function savePanelPrefs(prefs: PanelPrefs): Promise<void> {
   if (!contextAlive()) return;
   try {
     await chrome.storage.local.set({ [PANEL_KEY]: prefs });
-  } catch {
-    /* ignore */
-  }
-}
-
-/* -------------------------------------------------------------------- series */
-
-/**
- * Shows the user has browsed, and where they got to in each.
- *
- * `storage.local`, not `sync`: it is a watching position, not a preference, and the whole
- * point is that it is instantly right on the machine you are actually watching on — a sync
- * round trip that occasionally resolves stale would be worse than not syncing at all.
- *
- * Reading tolerates anything: a corrupt entry drops out rather than taking the list with
- * it, because losing "where I got to in one show" beats losing all eight.
- */
-export async function loadShows(): Promise<RememberedShow[]> {
-  if (!contextAlive()) return [];
-  try {
-    const stored = await chrome.storage.local.get(SHOWS_KEY);
-    const value = stored[SHOWS_KEY];
-    if (!Array.isArray(value)) return [];
-
-    const out: RememberedShow[] = [];
-    for (const raw of value) {
-      const row = raw as Partial<RememberedShow> | null;
-      if (typeof row?.showId !== 'number' || typeof row.name !== 'string') continue;
-      if (typeof row.season !== 'number' || typeof row.episode !== 'number') continue;
-      out.push({
-        showId: row.showId,
-        name: row.name,
-        season: row.season,
-        episode: row.episode,
-        lastUsedAt: typeof row.lastUsedAt === 'number' ? row.lastUsedAt : 0,
-      });
-    }
-    return out.slice(0, MAX_REMEMBERED_SHOWS);
-  } catch {
-    return [];
-  }
-}
-
-export async function saveShows(shows: readonly RememberedShow[]): Promise<void> {
-  if (!contextAlive()) return;
-  try {
-    await chrome.storage.local.set({ [SHOWS_KEY]: shows.slice(0, MAX_REMEMBERED_SHOWS) });
   } catch {
     /* ignore */
   }

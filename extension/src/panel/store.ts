@@ -15,17 +15,16 @@ import { DEFAULT_LANGUAGE } from '@/lib/languages';
 import {
   DEFAULT_PANEL_PREFS,
   loadDual,
-  loadLanguage,
   loadMovie,
   loadPanelPrefs,
   loadStyles,
   saveDual,
-  saveLanguage,
   saveMovie,
   savePanelPrefs,
   saveStyles,
   type PanelPrefs,
 } from '@/lib/storage';
+import { loadLanguage, saveLanguage } from '@/lib/searchStorage';
 import { makeAnchor, nudge as nudgeSync, onePointFit, resetSync, twoPointFit } from '@/lib/sync';
 import { videoKey } from '@/lib/videoKey';
 import { log } from '@/lib/log';

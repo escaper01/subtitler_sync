@@ -10,7 +10,7 @@ import {
 } from '@/lib/tv';
 import type { TvResult } from '@/lib/tvmaze';
 import { askBackground } from '@/lib/messaging';
-import { loadShows, saveShows } from '@/lib/storage';
+import { loadShows, saveShows } from '@/lib/searchStorage';
 import { usePanel } from '@/panel/store';
 import { log } from '@/lib/log';
 

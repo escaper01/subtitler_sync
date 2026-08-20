@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Subtitler — local test harness</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #0a0a0a;
+        color: #d4d4d4;
+        font: 14px/1.6 system-ui, sans-serif;
+      }
+      h1 { font-size: 18px; color: #fff; margin: 0 0 4px; }
+      p  { max-width: 70ch; color: #a3a3a3; }
+      code { background: #1c1c1c; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+      video { width: 640px; max-width: 100%; background: #000; border-radius: 6px; display: block; }
+      button {
+        background: #171717; color: #e5e5e5; border: 1px solid #404040;
+        border-radius: 5px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+      }
+      button:hover:not(:disabled) { background: #262626; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      .row { display: flex; gap: 8px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+      .status { color: #38bdf8; font-family: monospace; font-size: 13px; }
+      iframe { width: 680px; max-width: 100%; height: 420px; border: 1px solid #333; border-radius: 6px; }
+      section { margin-bottom: 32px; }
+      ol { max-width: 70ch; color: #a3a3a3; }
+    </style>
+  </head>
+  <body>
+    <h1>Subtitler — local test harness</h1>
+    <p>
+      Generates a video backed by a <code>blob:</code> URL, the same shape as the real target site
+      (JW Player feeding an MSE buffer). Nothing here touches the network.
+    </p>
+
+    <section>
+      <h2 style="font-size: 15px; color: #fff">Top frame</h2>
+      <video id="video" controls playsinline></video>
+      <div class="row">
+        <button id="short">Make 10s clip (fast)</button>
+        <button id="long">Make 100s clip (~1m40s wait)</button>
+        <span id="status" class="status">No clip yet — press a button.</span>
+      </div>
+      <p>
+        The 10s clip is below the 90s detection threshold on purpose: nothing should attach to it.
+        (Set <code>localStorage['subtitler:debug'] = '1'</code> and reload to watch it being
+        skipped as <em>looks like an ad or preroll</em>.) The 100s clip should be picked up as the
+        film.
+      </p>
+    </section>
+
+    <section>
+      <h2 style="font-size: 15px; color: #fff">Nested frame</h2>
+      <p>
+        A child iframe with its own video. On the real site the player lives in a cross-origin
+        iframe; this is same-origin, but it still proves <code>all_frames</code> injection and that
+        the allowlist gate reads the <em>top</em> page's host rather than the frame's.
+      </p>
+      <iframe src="./frame.html" title="nested player"></iframe>
+    </section>
+
+    <section>
+      <h2 style="font-size: 15px; color: #fff">Sample subtitle files</h2>
+      <p>
+        Two files sit next to this page in <code>test/</code>. Every cue announces the timecode it
+        should appear at, so you can check it against the clock burned into the clip.
+      </p>
+      <ul style="max-width: 70ch; color: #a3a3a3">
+        <li>
+          <code>sample.srt</code> — correctly timed. Cue <em>n</em> should appear exactly when the
+          clip's clock reads the time printed in the cue.
+        </li>
+        <li>
+          <code>sample-drift.srt</code> — the same lines, but authored at the wrong framerate
+          (25 vs 23.976). It starts almost right and slips further behind as the clip runs, which is
+          what <strong>Fix drift</strong> in the Sync tab is for.
+        </li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 style="font-size: 15px; color: #fff">What to check</h2>
+      <ol>
+        <li>Press <strong>Make 100s clip</strong> and wait for it, then play it.</li>
+        <li>
+          The panel should appear over the video. Load <code>sample.srt</code> — subtitles should
+          match the burned-in clock.
+        </li>
+        <li>
+          Nudge the timing off with <kbd>G</kbd>, then click the line you can see in the Sync tab.
+          It should snap back into place.
+        </li>
+        <li>
+          Load <code>sample-drift.srt</code>. Set anchor A on an early line and anchor B on a late
+          one, press <strong>Apply rate fix</strong>, and it should offer to snap to 23.976 → 25.
+        </li>
+        <li>Go fullscreen. Both the subtitles and the panel must stay visible.</li>
+        <li>
+          In the <strong>Sites</strong> tab, switch <code>localhost</code> off. The panel and the
+          subtitles should vanish immediately, with no reload. Turn it back on from the toolbar
+          popup and they should come straight back.
+        </li>
+      </ol>
+    </section>
+
+    <script type="module">
+      import { setupHarness } from './harness.js';
+
+      const shortBtn = document.getElementById('short');
+      const longBtn = document.getElementById('long');
+      const buttons = [shortBtn, longBtn];
+
+      const harness = setupHarness({
+        video: document.getElementById('video'),
+        status: document.getElementById('status'),
+        label: 'top frame',
+        buttons,
+      });
+
+      shortBtn.addEventListener('click', () => harness.record(10));
+      longBtn.addEventListener('click', () => harness.record(100));
+    </script>
+  </body>
+</html>

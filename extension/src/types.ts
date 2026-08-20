@@ -130,6 +130,22 @@ export interface SubtitleStyle {
   anchorTo: AnchorTo;
 }
 
+/* ---------------------------------------------------------------------- panel */
+
+/**
+ * The panel's tabs, as data.
+ *
+ * Here rather than in `storage.ts` because **the two builds have different tabs** and
+ * `storage.ts` is copied verbatim between them — see `tools/sync-shared.mjs`. This file
+ * already diverges, so the difference lives where it is expected to.
+ *
+ * The runtime array and the type come from one declaration, so a tab cannot be added to
+ * one and forgotten in the other.
+ */
+export const PANEL_TABS = ['subtitles', 'find', 'sync', 'style', 'sites'] as const;
+
+export type PanelTab = (typeof PANEL_TABS)[number];
+
 /* ---------------------------------------------------------------------- tabs */
 
 /**

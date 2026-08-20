@@ -3,7 +3,10 @@ import pkg from '../package.json' with { type: 'json' };
 
 export default defineManifest({
   manifest_version: 3,
-  name: 'Subtitle Synchronizer',
+  // The Store listing is the search-free build in `extension-lite/`, which keeps the plain
+  // name. This one is downloaded from the website and loaded unpacked, so it is named to
+  // be told apart in chrome://extensions when both are installed.
+  name: 'Subtitle Synchronizer (Full)',
   version: pkg.version,
   // 132 characters is the Web Store's hard limit for the listing summary, and it is
   // truncated in search results well before that. Keep this one line.
