@@ -18,7 +18,54 @@ npm install                  # also runs `prisma generate`
 cp .env.example .env         # then fill in the two Google values, see below
 npm run setup                # starts Postgres in Docker and runs the migrations
 npm run db:seed              # puts you in the Admin table
-npm run dev                  # http://localhost:3000
+npm run app:up               # builds and starts the app container
+```
+
+## How it runs
+
+**The app is a container, not a dev server you remember to start.** `docker-compose.yml`
+holds three services:
+
+| service   | what it is                          | where                     |
+|-----------|-------------------------------------|---------------------------|
+| `db`      | Postgres 17, `restart: unless-stopped` | host `5433` -> `5432`   |
+| `migrate` | one-shot `prisma migrate deploy`, then exits | —                |
+| `web`     | this app, `restart: unless-stopped`  | host **`47821`** -> `3000` |
+
+`web` waits on `migrate` completing *successfully*, so a failed migration stops the app from
+serving rather than letting it serve a schema it does not match. `docker compose logs migrate`
+says why.
+
+**Port 47821, not 3000.** 3000 is the first port every other project on the machine claims,
+and losing that race is not a connection error — the extension reaches whatever else is
+listening and faithfully reports its answers. The number appears in four places and they must
+agree: `docker-compose.yml` (published port *and* the `NEXT_PUBLIC_SITE_URL` build arg),
+`.env` (`NEXTAUTH_URL`, `NEXT_PUBLIC_SITE_URL`), `lib/site.ts` (the fallback), and
+`DEFAULT_API_BASE` in **both** extensions' `src/lib/api.ts`.
+
+Two things about the container that are easy to get wrong:
+
+- **`DATABASE_URL` differs by caller.** The container is given `db:5432` in
+  `docker-compose.yml`, which overrides the `localhost:5433` in `.env`. That `.env` value is
+  not wrong — it is for host tooling (`prisma migrate`, `prisma studio`, `npm run dev`).
+  Inside a container `localhost` is the container.
+- **`NEXT_PUBLIC_*` is baked in at build time.** It is substituted into the client bundle by
+  `next build`, so setting it as runtime environment does nothing. It is passed as a Docker
+  build argument instead, which is why changing it needs `npm run app:up` (with `--build`)
+  rather than `app:start`.
+
+`output: 'standalone'` in `next.config.ts` exists for this image, and the site pages that read
+donation rows are `force-dynamic` so `next build` needs no database — otherwise the image
+could not build without one on the network.
+
+### Still developing the web app?
+
+`npm run dev` on port 3000 with hot reload, at the same time as the container. Point the
+extension at it for the session from the service worker console:
+
+```js
+chrome.storage.sync.set({ apiBase: 'http://localhost:3000' })
+chrome.storage.sync.remove('apiBase')   // back to the container
 ```
 
 `npm run setup` is `docker compose up -d --wait && prisma migrate dev --name init`. The
@@ -66,7 +113,13 @@ There is no `ADMIN_EMAILS`. Admins are rows in the database — see below.
 ## Commands
 
 ```bash
-npm run dev        # http://localhost:3000 — what the extension points at by default
+npm run app:up     # build + start the container — http://localhost:47821
+npm run app:start  # start it without rebuilding
+npm run app:down   # stop the whole stack
+npm run app:logs   # follow the app's logs
+npm run app:restart# restart just the app
+
+npm run dev        # hot-reload dev server on :3000, for editing this app
 npm run build
 npm run test       # parser tests, offline
 npm run check      # typecheck + tests

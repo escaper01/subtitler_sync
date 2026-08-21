@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   // so the dashboard pages stay same-origin only.
   reactStrictMode: true,
 
+  // Emit `.next/standalone`: a server.js plus only the node_modules actually reached.
+  // This is what the Dockerfile's runtime stage copies, and it is the reason that image
+  // carries no toolchain and no source. Harmless outside Docker — `npm run dev` and
+  // `npm run start` do not look at it.
+  output: 'standalone',
+
   async redirects() {
     return [
       // `/pricing` was the paid-plans page. There are no plans, but the URL is in the

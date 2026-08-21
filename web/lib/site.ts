@@ -16,5 +16,7 @@ export const STORE_URL =
 export const SITE_URL = (
   process.env.NEXT_PUBLIC_SITE_URL ??
   process.env.NEXTAUTH_URL ??
-  'http://localhost:3000'
+  // The port docker-compose.yml publishes, and what both extension builds point at by
+  // default. Keep the three in step — see web/docker-compose.yml.
+  'http://localhost:47821'
 ).replace(/\/+$/, '');

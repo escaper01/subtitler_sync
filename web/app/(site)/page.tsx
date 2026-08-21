@@ -6,6 +6,17 @@ import { STORE_URL } from '@/lib/site';
 import { donatePrompt } from '@/lib/donate';
 import { DonateButtons } from '@/components/DonateButtons';
 
+/**
+ * Rendered per request, not at build.
+ *
+ * The donation buttons are `DonationLink` rows edited at /admin/donations. Prerendering
+ * them would freeze whatever was in the table the moment the image was built, so adding a
+ * link would need a rebuild to show up — the deploy-to-change-a-row problem the settings
+ * table exists to avoid. It also means `next build` needs no database, which is what lets
+ * the Docker image build without one on the network.
+ */
+export const dynamic = 'force-dynamic';
+
 export default async function Home() {
   const prompt = await donatePrompt();
 

@@ -19,8 +19,26 @@ npm install                  # also runs `prisma generate`
 cp .env.example .env         # then fill in the Google values below
 npm run setup                # starts Postgres in Docker, runs the migrations
 npm run db:seed              # puts you in the Admin table
-npm run dev                  # http://localhost:3000
+npm run app:up               # builds and starts the app container
 ```
+
+That last command is the one that changed. **The API now runs in a container of its own, on
+http://localhost:47821**, alongside the database and with `restart: unless-stopped` on both
+— so it comes back after a reboot and the extension has something to call without anyone
+remembering to start a dev server. Both extension builds point at that port by default.
+
+Port 47821 rather than 3000 on purpose: 3000 is the first port every other project on a
+machine takes, and a clash there does not fail loudly. The extension connects, gets somebody
+else's server, and reports whatever that one says.
+
+You still want `npm run dev` while actually editing the web app — it is on port 3000 with hot
+reload, and the two can run at the same time. Point the extension at it for the session with:
+
+```js
+chrome.storage.sync.set({ apiBase: 'http://localhost:3000' })
+```
+
+run from the service worker console. Clear it with `chrome.storage.sync.remove('apiBase')`.
 
 ```bash
 cd ../extension
@@ -47,7 +65,7 @@ ids. That is deliberate; developing them together requires it.
 1. [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services →
    Credentials → **Create credentials** → OAuth client ID → **Web application**.
 2. Authorised redirect URI, exactly:
-   `http://localhost:3000/api/auth/callback/google`
+   `http://localhost:47821/api/auth/callback/google`
 3. Paste both values into `web/.env`.
 
 These gate `/admin` and nothing else. Until they are set you cannot sign in to the dashboard;

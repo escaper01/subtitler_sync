@@ -23,12 +23,21 @@ import { installId } from '@/background/install';
 /**
  * Where the API lives.
  *
- * Points at the local `web/` dev server, because nothing is deployed yet. Override without
- * a rebuild by setting `apiBase` in `chrome.storage.sync`:
+ * Points at the `web/` container, because nothing is deployed yet. That container is
+ * always up (`restart: unless-stopped` in web/docker-compose.yml), so this works without
+ * anyone having started a dev server first.
+ *
+ * **Port 47821, not 3000.** A high, unremarkable number, because 3000 is the first port
+ * every other project on the machine takes — and a clash there is not a failure to
+ * connect, it is the extension quietly talking to somebody else's server and reporting
+ * whatever that one says. Change it here, in `extension-lite/src/lib/api.ts` (this file is
+ * deliberately not synced between the two builds), and in docker-compose.yml together.
+ *
+ * Override without a rebuild by setting `apiBase` in `chrome.storage.sync`:
  *
  *   chrome.storage.sync.set({ apiBase: 'https://subtitler.example.com' })
  */
-const DEFAULT_API_BASE = 'http://localhost:3000';
+const DEFAULT_API_BASE = 'http://localhost:47821';
 
 const TIMEOUT_MS = 20_000;
 
