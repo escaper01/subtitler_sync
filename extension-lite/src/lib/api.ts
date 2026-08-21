@@ -17,12 +17,19 @@ import { installId } from '@/background/install';
 /**
  * Where the API lives.
  *
- * Points at the local `web/` dev server, because nothing is deployed yet. Override without
- * a rebuild by setting `apiBase` in `chrome.storage.sync`:
+ * Points at the `web/` container, which is always up (`restart: unless-stopped` in
+ * web/docker-compose.yml). This build makes exactly one request — `GET /api/donate` — so
+ * the only thing a wrong value here costs is the donation prompt.
+ *
+ * **Port 47821, not 3000**, to stay clear of whatever else is running on the machine. Kept
+ * in step with `extension/src/lib/api.ts` by hand: this file is on the deliberately-not-
+ * synced list in tools/sync-shared.mjs, because the two builds have different endpoints.
+ *
+ * Override without a rebuild by setting `apiBase` in `chrome.storage.sync`:
  *
  *   chrome.storage.sync.set({ apiBase: 'https://subtitler.example.com' })
  */
-const DEFAULT_API_BASE = 'http://localhost:3000';
+const DEFAULT_API_BASE = 'http://localhost:47821';
 
 const TIMEOUT_MS = 20_000;
 

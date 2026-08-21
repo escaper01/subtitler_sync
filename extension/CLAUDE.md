@@ -277,12 +277,24 @@ off would leave an `example.com` rule behind and the switch would flick straight
 ## Subtitle search
 
 The **Find** tab searches subtitlecat through the `web/` API rather than the site directly — see
-the root `CLAUDE.md` for why. The API base is `http://localhost:3000` by default, since nothing
-is deployed yet; override it without a rebuild:
+the root `CLAUDE.md` for why. The API base is **`http://localhost:47821`** by default, since
+nothing is deployed yet: that is the `web/` container, which runs with `restart: unless-stopped`
+and so is up without anyone having started a dev server. A high, unremarkable port rather than
+3000 because losing that port to another project does not fail loudly — the extension connects
+to whatever else is listening and reports its answers as ours.
+
+Override without a rebuild:
 
 ```js
 chrome.storage.sync.set({ apiBase: 'https://subtitler.example.com' })
+chrome.storage.sync.set({ apiBase: 'http://localhost:3000' })  // a local `npm run dev`
+chrome.storage.sync.remove('apiBase')                          // back to the default
 ```
+
+`DEFAULT_API_BASE` lives in `src/lib/api.ts` **in both builds**, and `src/lib/api.ts` is on the
+deliberately-not-synced list in `tools/sync-shared.mjs` (lite has one endpoint). Changing the
+port means editing both files by hand — the sync will not catch the drift, because there is
+nothing it considers drift.
 
 The UI mirrors what the search actually returns: a list of *releases* (someone's upload, named
 after the video file it was timed against), each holding one subtitle per language. Picking by

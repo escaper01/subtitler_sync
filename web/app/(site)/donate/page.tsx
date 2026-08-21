@@ -20,6 +20,9 @@ export const metadata: Metadata = {
  * The buttons come from `DonationLink` rows. With none configured the page still renders,
  * and says so, rather than showing an empty box.
  */
+/** Per request, for the same reason as the home page — see `app/(site)/page.tsx`. */
+export const dynamic = 'force-dynamic';
+
 export default async function DonatePage() {
   const prompt = await donatePrompt();
 

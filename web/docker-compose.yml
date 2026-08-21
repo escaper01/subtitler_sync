@@ -1,13 +1,20 @@
-# Local Postgres for development.
+# Postgres and the web app, both long-running.
 #
-#   docker compose up -d      start it (data survives restarts)
-#   docker compose down       stop it
-#   docker compose down -v    stop it and delete the data
+#   docker compose up -d --build   start everything (rebuilds the app image)
+#   docker compose up -d           start everything (reuses the current image)
+#   docker compose down            stop it
+#   docker compose down -v         stop it and delete the data
+#   docker compose logs -f web     watch the app
 #
-# Host port 5433, not 5432: something is already listening on 5432 on this machine, and a
-# clash there shows up as an authentication failure against the *other* database rather
-# than as "port in use" — an genuinely confusing hour. Change it here and in DATABASE_URL
-# together if 5433 is taken too.
+# The app is on **http://localhost:47821** and both extension builds point there by
+# default. The port is deliberately an unremarkable high one: 3000, 5000 and 8080 are the
+# first things any other project on this machine will take, and a clash on those shows up
+# as the extension talking to somebody else's server rather than as a failure to start.
+#
+# `restart: unless-stopped` on both means they come back after a reboot or a Docker
+# restart, which is the whole point — the extension should not need anyone to have run
+# `npm run dev` first. It also means a paused or stopped container is a deliberate act;
+# if searches start timing out, `docker compose ps` is the first thing to check.
 
 services:
   db:
@@ -19,6 +26,11 @@ services:
       POSTGRES_PASSWORD: subtitler
       POSTGRES_DB: subtitler
     ports:
+      # Host port 5433, not 5432: something is already listening on 5432 on this machine,
+      # and a clash there shows up as an authentication failure against the *other*
+      # database rather than as "port in use" — a genuinely confusing hour. Published at
+      # all only so host tooling (`prisma migrate`, `prisma studio`, `npm run dev`) can
+      # reach it; the app container does not use this and talks to `db:5432` directly.
       - '5433:5432'
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -31,6 +43,72 @@ services:
       timeout: 3s
       retries: 15
       start_period: 5s
+
+  # Runs the pending migrations once, then exits. `web` waits for it to exit *successfully*,
+  # so a schema change cannot half-apply into a serving app: if this fails, the app does not
+  # start, and `docker compose logs migrate` says why.
+  #
+  # Built from the `builder` stage because that is the only one with the Prisma CLI and the
+  # migrations folder together. It shares every layer with the app image, so it costs
+  # build time only the first time.
+  migrate:
+    build:
+      context: .
+      target: builder
+    image: subtitler-web-builder
+    container_name: subtitler-migrate
+    command: npx prisma migrate deploy
+    environment:
+      DATABASE_URL: postgresql://subtitler:subtitler@db:5432/subtitler
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    build:
+      context: .
+      target: runner
+      args:
+        # Substituted into the client bundle at build time, so a change here needs
+        # `--build`, not just `up -d`. Must match the published port below.
+        NEXT_PUBLIC_SITE_URL: http://localhost:47821
+        NEXT_PUBLIC_STORE_URL: ''
+    image: subtitler-web
+    container_name: subtitler-web
+    restart: unless-stopped
+    ports:
+      - '47821:3000'
+    environment:
+      # `db:5432`, not `localhost:5433` — inside the container `localhost` is the container
+      # itself. This deliberately overrides the DATABASE_URL in `.env` below, which is
+      # written for host tooling; values here win over `env_file`.
+      DATABASE_URL: postgresql://subtitler:subtitler@db:5432/subtitler
+      NEXTAUTH_URL: http://localhost:47821
+      NODE_ENV: production
+    env_file:
+      # Secrets, not URLs: NEXTAUTH_SECRET, IP_HASH_SALT, GOOGLE_CLIENT_ID/SECRET. Anything
+      # here that is also set above is overridden by the value above.
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      # /api/donate is the cheapest honest check: it is a real database read, so a green
+      # container means the app can actually serve, not merely that node is running.
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/donate').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
 volumes:
   db-data:

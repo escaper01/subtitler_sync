@@ -6,6 +6,11 @@
   "scripts": {
     "postinstall": "prisma generate",
     "dev": "next dev --turbopack",
+    "app:up": "docker compose up -d --build",
+    "app:start": "docker compose up -d",
+    "app:down": "docker compose down",
+    "app:logs": "docker compose logs -f web",
+    "app:restart": "docker compose restart web",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
