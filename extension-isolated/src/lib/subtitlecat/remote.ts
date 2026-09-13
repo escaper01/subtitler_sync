@@ -3,9 +3,12 @@ import { DEFAULT_CONFIG, readConfig, type RemoteConfig } from '@/lib/subtitlecat
 /**
  * Fetching the remote config. **Service worker only.**
  *
- * One JSON file in this repository, read straight off GitHub. Editing it and pushing is
- * how a renamed selector or a new donation link reaches every install without a build —
- * the whole reason this build can do without a server.
+ * One JSON file, read straight off GitHub. It is authored as `remote/config.json` in this
+ * folder and published to a separate **public** repository by `npm run config:publish` —
+ * separate because this repository is private, and raw.githubusercontent.com answers 404
+ * for a private file. Editing it and publishing is how a renamed selector or a new
+ * donation link reaches every install without a build — the whole reason this build can
+ * do without a server.
  *
  * Cached in `storage.local`, not in worker memory (which is suspended after ~30s idle
  * and would refetch constantly). A fresh copy is used as is; a stale one is used at once
@@ -13,8 +16,7 @@ import { DEFAULT_CONFIG, readConfig, type RemoteConfig } from '@/lib/subtitlecat
  * copy at all means one awaited fetch, and the bundled defaults if that fails.
  */
 
-export const CONFIG_URL =
-  'https://raw.githubusercontent.com/escaper01/subtitler_sync/main/extension-isolated/remote/config.json';
+export const CONFIG_URL = 'https://raw.githubusercontent.com/escaper01/subtitler-config/main/config.json';
 
 const KEY = 'sc:config';
 const TTL_MS = 6 * 60 * 60 * 1000;

@@ -47,10 +47,12 @@ lets both be installed at once.
 `extension-isolated/` is the answer to "can the search feature work without us running
 anything?" — no container, no database, no deploy. It is `extension/` with `lib/api.ts`
 replaced: the service worker fetches subtitlecat itself, an offscreen document parses the
-HTML, and the selectors the parser uses come from `extension-isolated/remote/config.json`
-in this repository (fetched raw from GitHub, bundled copy as fallback) so a renamed class on
-the site is an edit and a push rather than a new build. The donation prompt rides in the
-same file.
+HTML, and the selectors the parser uses come from a JSON file fetched raw from GitHub —
+authored as `extension-isolated/remote/config.json`, published to the public
+`escaper01/subtitler-config` repository by `npm run config:publish` (this repository is
+private, so raw GitHub will not serve the file from here), bundled copy as fallback. A
+renamed class on the site is an edit and a publish rather than a new build. The donation
+prompt rides in the same file.
 
 It has its **own signing key** (a third id), so all three can be installed side by side.
 
