@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "base": "https://subtitlecat.com",
+  "searchPath": "/index.php?search={query}",
+  "selectors": {
+    "search": {
+      "row": "table.sub-table tbody tr",
+      "link": "td:nth-child(1) a",
+      "source": "td:nth-child(1)",
+      "recommended": "td:nth-child(2) i",
+      "size": "td:nth-child(3) .sub-table__metric-value",
+      "downloads": "td:nth-child(4)",
+      "languages": "td:nth-child(5)"
+    },
+    "detail": {
+      "heading": "h2.sec-title",
+      "headingPrefix": "All language subtitles for",
+      "missingMarker": "file not found",
+      "block": ".sub-single",
+      "link": "a.green-link",
+      "flag": "img.flag",
+      "linkIdPrefix": "download_",
+      "label": "span:nth-of-type(2)"
+    }
+  },
+  "donate": {
+    "enabled": false,
+    "heading": "",
+    "message": "",
+    "color": "#38bdf8",
+    "links": []
+  }
+}

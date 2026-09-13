@@ -81,6 +81,13 @@ const SHARED = [
   'tools/verify-build.mjs',
 ];
 
+/**
+ * `extension-isolated/` is deliberately NOT a target. It is a fork of `extension/` whose
+ * search path diverges across types, the worker, the manifest and the build — enough that
+ * a three-way sync would be more script than it is worth. A shared fix is applied there by
+ * hand; its CLAUDE.md says so.
+ */
+
 /** Whole directories copied recursively. */
 const SHARED_DIRS = ['public', 'test'];
 

@@ -1,19 +1,22 @@
 # Subtitler
 
-Three independent projects that ship together.
+Four independent projects that ship together.
 
 ```
-extension/        Chrome/Edge MV3 extension — the full build: overlay, sync, dual
-                  subtitles, subtitle search and the TVmaze series browser
-extension-lite/   the same, minus search — this is the Chrome Web Store listing
-web/              Next.js app — the subtitle search API, the public site, the admin dashboard
+extension/           Chrome/Edge MV3 extension — the full build: overlay, sync, dual
+                     subtitles, subtitle search and the TVmaze series browser
+extension-lite/      the same, minus search — this is the Chrome Web Store listing
+extension-isolated/  the full build again, but search talks to subtitlecat directly:
+                     no server of ours involved. A fork of extension/, not synced.
+web/                 Next.js app — the subtitle search API, the public site, the admin dashboard
 ```
 
 **Setting it up, or deploying it: see [`SETUP.md`](./SETUP.md).**
 
 Each has its own `package.json` and its own install. **There is no workspace tooling** —
-`npm install` in each folder, separately. Read `extension/CLAUDE.md` before touching either
+`npm install` in each folder, separately. Read `extension/CLAUDE.md` before touching any
 extension; it documents constraints that are not guessable from the code.
+`extension-isolated/CLAUDE.md` adds what is different about that one.
 
 ---
 
@@ -38,6 +41,26 @@ differ are listed in that script, so a difference is a decision rather than an o
 
 The two builds carry **different signing keys** and therefore different ids, which is what
 lets both be installed at once.
+
+## Why there is a third
+
+`extension-isolated/` is the answer to "can the search feature work without us running
+anything?" — no container, no database, no deploy. It is `extension/` with `lib/api.ts`
+replaced: the service worker fetches subtitlecat itself, an offscreen document parses the
+HTML, and the selectors the parser uses come from `extension-isolated/remote/config.json`
+in this repository (fetched raw from GitHub, bundled copy as fallback) so a renamed class on
+the site is an edit and a push rather than a new build. The donation prompt rides in the
+same file.
+
+It has its **own signing key** (a third id), so all three can be installed side by side.
+
+It is **a fork, not a synced copy** — `tools/sync-shared.mjs` ignores it. The two builds
+diverge only in the search path, but that path touches enough (types, the worker, the
+manifest, the build) that a three-way sync would be more script than it is worth. A fix to
+the overlay or the sync tool that belongs everywhere is made in `extension/`, synced to
+`extension-lite/`, and applied to `extension-isolated/` by hand. Every one of the three
+rules below about the API chain is **not true** of the isolated build; its own `CLAUDE.md`
+says what replaces them.
 
 ## How the extension and the web app fit together
 
@@ -65,6 +88,11 @@ It still runs in the worker, for the CORS reason above.
 
 **`extension-lite/` makes exactly one request:** `GET /api/donate`. Worth remembering when
 writing the Store listing — "no network access" would be false.
+
+**`extension-isolated/` makes no request to `web/` at all.** It talks to `subtitlecat.com`,
+`api.tvmaze.com` and `raw.githubusercontent.com` (for its config), all from the worker. If
+it is ever distributed, the privacy page has to describe that build separately — the one at
+`/privacy` describes the other two.
 
 ## The shared contract
 

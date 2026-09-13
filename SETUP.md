@@ -1,8 +1,12 @@
 # Setting this up, from nothing to live
 
-Three folders ship together: `extension/` (the full build), `extension-lite/` (the Chrome Web
-Store listing) and `web/` (the API, the public site and the admin dashboard). This is the
-order to do things in.
+Four folders ship together: `extension/` (the full build), `extension-lite/` (the Chrome Web
+Store listing), `extension-isolated/` (the full build with no server behind it) and `web/`
+(the API, the public site and the admin dashboard). This is the order to do things in.
+
+**If all you want is the isolated build, skip Part A's `web/` steps entirely** — it needs
+neither Docker nor the API. `cd extension-isolated && npm install && npm run build`, load
+`dist/` unpacked, done.
 
 Each folder has its own `CLAUDE.md` with the reasoning behind how it works. This file is only
 the sequence.
@@ -52,8 +56,16 @@ npm install
 npm run build
 ```
 
+```bash
+cd ../extension-isolated
+npm install
+npm run build
+```
+
 Then load them: `chrome://extensions` → enable Developer mode → **Load unpacked** →
-select `extension/dist`, and again for `extension-lite/dist`.
+select `extension/dist`, and again for `extension-lite/dist` and `extension-isolated/dist`.
+All three have distinct ids and can be installed at once. Only the first two need the
+container running for anything; the isolated build's Find tab works on its own.
 
 Both can be installed at once — they carry different signing keys and therefore different
 ids. That is deliberate; developing them together requires it.
@@ -86,8 +98,10 @@ setup rather than optional.
 cd web && npm run check                # typecheck + tests
 LIVE=1 npm test                        # also the ones that hit subtitlecat for real
 
-cd ../extension && npm run check       # typecheck + tests + build + verify + drift check
-cd ../extension-lite && npm run check  # the same
+cd ../extension && npm run check           # typecheck + tests + build + verify + drift check
+cd ../extension-lite && npm run check      # the same
+cd ../extension-isolated && npm run check  # typecheck + tests + build + verify — no drift check, it is a fork
+LIVE=1 npm test                            # in extension-isolated: parse the real subtitlecat
 ```
 
 `LIVE=1` is the one to run when someone reports that search finds nothing — it tells you
@@ -111,8 +125,8 @@ node tools/sync-shared.mjs --check   # fail on drift (runs inside npm run check 
 
 ### 1. Back up both signing keys
 
-`extension/key.pem` and `extension-lite/key.pem` exist and are git-ignored. Two rules for
-each:
+`extension/key.pem`, `extension-lite/key.pem` and `extension-isolated/key.pem` exist and are
+git-ignored. Two rules for each:
 
 - **Back it up somewhere outside this repo.** Lose it and that extension can never be
   updated again.
@@ -132,6 +146,7 @@ Current ids:
 |---|---|
 | `extension-lite/` — the listing | `amfmeepehkpjlcadlkkcbdclfbofebao` |
 | `extension/` — the full build | `gpifnmbipbmkkmpnbcmdlehjbpoheidj` |
+| `extension-isolated/` — no server | `dphmlhdlikpnnegfejcebfieoegbjlop` |
 
 ### 2. Have a privacy policy
 
