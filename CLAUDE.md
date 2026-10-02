@@ -1,150 +1,1082 @@
 # Subtitler
 
-Four independent projects that ship together.
+Two independent projects in one repository:
 
 ```
-extension/           Chrome/Edge MV3 extension — the full build: overlay, sync, dual
-                     subtitles, subtitle search and the TVmaze series browser
-extension-lite/      the same, minus search — this is the Chrome Web Store listing
-extension-isolated/  the full build again, but search talks to subtitlecat directly:
-                     no server of ours involved. A fork of extension/, not synced.
-web/                 Next.js app — the subtitle search API, the public site, the admin dashboard
+extension-isolated/  Chrome/Edge/Firefox MV3 extension — the whole product: subtitle overlay,
+                     sync tool, subtitle search and the TVmaze series browser. No server.
+web/                 Next.js app — a subtitle search API, a public site, an admin dashboard.
+                     Not used by the extension; kept as it was. See its section.
 ```
-
-**Setting it up, or deploying it: see [`SETUP.md`](./SETUP.md).**
 
 Each has its own `package.json` and its own install. **There is no workspace tooling** —
-`npm install` in each folder, separately. Read `extension/CLAUDE.md` before touching any
-extension; it documents constraints that are not guessable from the code.
-`extension-isolated/CLAUDE.md` adds what is different about that one.
+`npm install` in each folder, separately. This file is the only `CLAUDE.md`; the extension's
+section is long and documents constraints that are not guessable from the code, so read it
+before touching `extension-isolated/`. **Setup and deploy steps: [`SETUP.md`](./SETUP.md).**
 
----
-
-## Why there are two extensions
-
-Subtitle search is what draws Web Store review attention, so the published listing does not
-have it. `extension-lite/` is that build: load a subtitle file you already have, fix its
-timing, show two languages at once. `extension/` keeps search and the series browser and is
-downloaded from the website, loaded unpacked.
-
-They are **separate folders with a large byte-identical overlap**, kept in step by
-`tools/sync-shared.mjs`:
-
-```bash
-node tools/sync-shared.mjs           # copy extension/ -> extension-lite/
-node tools/sync-shared.mjs --check   # fail on drift — runs inside npm run check in BOTH
-```
-
-**Fix it in `extension/`, run the sync, commit both.** Never edit a shared file in
-`extension-lite/`; the next sync overwrites it silently. The files that are supposed to
-differ are listed in that script, so a difference is a decision rather than an oversight.
-
-The two builds carry **different signing keys** and therefore different ids, which is what
-lets both be installed at once.
-
-## Why there is a third
-
-`extension-isolated/` is the answer to "can the search feature work without us running
-anything?" — no container, no database, no deploy. It is `extension/` with `lib/api.ts`
-replaced: the service worker fetches subtitlecat itself, an offscreen document parses the
-HTML, and the selectors the parser uses come from a JSON file fetched raw from GitHub —
-authored as `extension-isolated/remote/config.json`, published to the public
-`escaper01/subtitler-config` repository by `npm run config:publish` (this repository is
-private, so raw GitHub will not serve the file from here), bundled copy as fallback. A
-renamed class on the site is an edit and a publish rather than a new build. The donation
-prompt rides in the same file.
-
-It has its **own signing key** (a third id), so all three can be installed side by side.
-
-It is **a fork, not a synced copy** — `tools/sync-shared.mjs` ignores it. The two builds
-diverge only in the search path, but that path touches enough (types, the worker, the
-manifest, the build) that a three-way sync would be more script than it is worth. A fix to
-the overlay or the sync tool that belongs everywhere is made in `extension/`, synced to
-`extension-lite/`, and applied to `extension-isolated/` by hand. Every one of the three
-rules below about the API chain is **not true** of the isolated build; its own `CLAUDE.md`
-says what replaces them.
-
-## How the extension and the web app fit together
-
-The extension can load a subtitle file the user picked, which needs nothing from the server.
-The full build can also *search* for one, which goes through `web`:
-
-```
-panel  →  service worker  →  web/api/*  →  subtitlecat.com
-```
-
-Three things about that chain are deliberate:
-
-- **The extension never calls subtitlecat directly.** The parsing lives server-side, so when
-  the site changes its markup the fix is a deploy rather than an extension update every user
-  has to install.
-- **The panel never calls the API directly either.** An MV3 content script's `fetch` obeys
-  the *page's* CORS rules; the service worker's obeys the extension's host permissions. So
-  requests are relayed through the worker.
-- **Subtitle files are relayed, not redirected.** The upstream URL never reaches the client.
-
-**TVmaze is the exception, deliberately.** The series browser calls `api.tvmaze.com` straight
-from the service worker rather than through `web/`. No API key, stable contract, and a
-browser whose only job is to fill in a text box should not stop working when our server does.
-It still runs in the worker, for the CORS reason above.
-
-**`extension-lite/` makes exactly one request:** `GET /api/donate`. Worth remembering when
-writing the Store listing — "no network access" would be false.
-
-**`extension-isolated/` makes no request to `web/` at all.** It talks to `subtitlecat.com`,
-`api.tvmaze.com` and `raw.githubusercontent.com` (for its config), all from the worker. If
-it is ever distributed, the privacy page has to describe that build separately — the one at
-`/privacy` describes the other two.
-
-## The shared contract
-
-`api-types.ts` exists **three times** — `web/lib/`, `extension/src/lib/`,
-`extension-lite/src/lib/` — because the folders are independent. `languages.ts` exists twice
-(`web/lib/` and `extension/src/lib/`; the lite build has no languages).
-
-**If you change one, change the others in the same commit.** Nothing enforces it. A drifted
-language table means a code the user can tick and never receive results for; a drifted
-contract fails at runtime, in the one place where no typechecker is looking.
-
-## There is no money in this codebase
-
-There was: an entitlement ledger, licence keys, device limits, trials, customer accounts and
-a paywall on search. **All of it was removed.** The extension carries no credential, there is
-nothing to sign in to, and every feature is free.
-
-One consequence matters more than the rest and is easy to miss:
-
-> **Nothing authenticates the search API any more.** `requireEntitlement` ran on `search`,
-> `release` *and* `download`. What replaced it is `web/lib/rateLimit.ts`, keyed on the
-> extension's anonymous install id and a hashed IP. That limiter is the whole guard. A change
-> that weakens it is not a tuning change.
-
-Monetisation is donations: `DonationLink` rows edited at `/admin/donations`, rendered on the
-site and inside the extension panel. Links to PayPal, Ko-fi or wherever else — there is no
-payment provider, no checkout, and nothing is unlocked by donating. `web/lib/donate.ts`
-validates every URL and colour on the way in *and* on the way out, because those values are
-rendered inside pages we do not control.
-
-`web/CLAUDE.md` sets out what a replacement paywall would have to plug into, if one is ever
-wanted.
+`PLAN.md` is the historical plan for the build that became the extension; it is not kept in
+step with the code.
 
 ## Status
 
-Working: the overlay, the sync tool, **two subtitle tracks at once with independent
-timing**, the site allowlist, subtitle search with one-click loading, **the TVmaze series
-browser** (pick a show, season and episode; it remembers where you got to), the public site,
-the donation page, the admin dashboard (overview, reports, requests, donations, settings, API
-reference), and the donation prompt on both surfaces.
+Working: the overlay, the sync tool, a single subtitle track with its own timing, the site
+allowlist, subtitle search with one-click loading, the TVmaze series browser, the donation
+prompt, and a Firefox build alongside the Chrome one. In `web/`: the public site, the donation
+page, the admin dashboard and the search API.
 
-Rate limits and the donation prompt's wording are **rows in the database**, edited at
-`/admin/settings`. A limit that needs a deploy to change is one you cannot use in an
-emergency — which matters more now that it is the only thing in front of the API.
+There is no money in this codebase — no licence keys, accounts or paywall, and the extension
+carries no credential. Monetisation is donation links only.
 
-Setting up `web/` from scratch is `npm install && cp .env.example .env && npm run setup &&
-npm run db:seed` — Postgres runs in Docker (`web/docker-compose.yml`) and the admin list is a
-table, seeded from `web/prisma/seed.mjs`. The only values you must fetch by hand are the
-Google OAuth client id and secret, and they gate nothing but `/admin`. See `web/CLAUDE.md`.
+The extension makes requests to exactly three hosts, all from the service worker:
+`subtitlecat.com`, `api.tvmaze.com` and `raw.githubusercontent.com` (its config and donation
+prompt). If it is distributed, the privacy policy has to describe that. The page at `/privacy`
+in `web/` was written for the retired builds and does **not** describe this one.
 
-The privacy policy lives at `/privacy` and is written from what the code actually stores.
-**If you change what is collected, change that page in the same commit** — the Web Store
-listing points at it. Telemetry beyond `SearchLog` is not built.
+---
+
+## The extension (`extension-isolated/`)
+
+A Chrome/Edge/Firefox (Manifest V3) extension that overlays user-supplied `.srt` / `.vtt` subtitles onto
+any HTML5 video playing in the browser, with a click-to-sync tool for realigning a mistimed track.
+
+**It needs no server.** Subtitle search talks to subtitlecat directly from the service worker
+(and the TVmaze series browser talks to `api.tvmaze.com`) — no container, no database, nothing
+to deploy, nothing of ours to keep running. Install it and search works. What that costs, and
+how the cost is paid, is the *Subtitle search* section below.
+
+It is the only extension in this repository. Two earlier builds, `extension/` (searching
+through `web/`) and `extension-lite/` (no search, the Web Store listing), were removed; their
+history is in git and their signing keys are in `retired-keys/`.
+
+Built for streaming sites that ship no subtitle track of their own — `hdfilme.to`,
+`serienstream.to`, `aniworld.to` and friends, which rotate domains freely (`.win` → `.best` →
+`.to`, …). It runs only on the sites in the user's allowlist; a rotated domain is added from the
+toolbar popup.
+
+---
+
+### Firefox
+
+`npm run build:firefox` (Vite `--mode firefox`) writes `dist-firefox/`; `npm run check` builds
+and verifies both. Load it from `about:debugging` → *This Firefox* → *Load Temporary Add-on* →
+pick `dist-firefox/manifest.json`. It is the same source — the differences are all in
+`manifest.config.ts`, `vite.config.ts` and `background/offscreen.ts`:
+
+- **Event page, not a service worker.** Firefox has no MV3 service workers, so the manifest
+  declares `background.scripts`. Same file, same listeners, same "nothing survives a
+  suspend" rule.
+- **No offscreen document.** An event page has a DOM, so `parseOffscreen` parses in place
+  when `DOMParser` exists. It tests the capability, not the build flag; the offscreen page
+  and permission are simply not part of the Firefox build.
+- **Identity is `browser_specific_settings.gecko.id`**, not the Chrome `key`. Changing it
+  makes Firefox treat the extension as a different one, so settle it before publishing.
+- **`location.ancestorOrigins` does not exist in Firefox**, so `topHostname()` returns null
+  for every child frame and the content script takes its existing fallback (`get-top-url`
+  to the background). Correct, but one message per frame at startup instead of none.
+- **Not tested on a real Firefox from CI** — only built and structurally verified. Run the
+  harness (`npm run dev:firefox`, `test/local.html`) in Firefox before shipping.
+
+---
+
+### The one thing to understand before touching this code
+
+The video is **not reachable by URL**. Do not write code that tries.
+
+The target site embeds a **JW Player inside a cross-origin iframe** (`dr0pstream.com`), and the
+player's element looks like this:
+
+```html
+<video class="jw-video jw-reset" src="blob:https://dr0pstream.com/8150fdb4-…"></video>
+```
+
+A `blob:` src means **MSE (MediaSource Extensions)**: `hls.js` fetches `.ts` segments over XHR and
+pushes them into a buffer that exists only in that page's JavaScript heap. Consequences:
+
+- There is no URL that plays this stream. Not in VLC, not in a `<video>` you create, not anywhere.
+  (The underlying `.m3u8`/`.ts` URLs are additionally signed — `t=<token>&s=<epoch>&e=14400`,
+  bound to referer/IP with a 4-hour expiry — so they 403 outside the page anyway.)
+- **The network layer is therefore irrelevant to the feature.** Subtitles are a DOM overlay
+  driven by `video.currentTime`. Nothing else is needed.
+- The only genuinely hard problem is *reaching* the `<video>` element, because it lives in a
+  cross-origin child frame. Hence: inject into all frames, render the overlay in the frame that
+  owns the video, and drive it from a panel in the top frame via the service worker.
+
+The iframe chain, for orientation:
+
+```
+hdfilme.to  →  <iframe id="_player" src="//dropload.co/embed-<id>.html">
+            →  dr0pstream.com/embed-<id>.html  →  <video src="blob:…">
+```
+
+The same `<id>` appears in both URLs, so `dropload.co` almost certainly redirects to
+`dr0pstream.com` — one iframe that navigates, rather than two nested ones. Either way
+`all_frames: true` covers it, and the outer iframe carries `allowfullscreen`, so fullscreen
+propagates to the frame that owns the video, and therefore to our overlay.
+
+#### Invariants
+
+1. **No code may depend on the media URL, the manifest, or the segments.** If a feature seems to
+   need them, the design is wrong.
+2. **The overlay _and the panel_ render in the video's own frame.** An overlay in the top frame
+   cannot sit on top of content inside a cross-origin iframe, and — the decisive part — when a
+   child frame goes fullscreen, the top document's `fullscreenElement` is the `<iframe>` element
+   itself. Nothing outside it renders, and you cannot append DOM into a cross-origin iframe. So a
+   top-frame panel would vanish the moment the user goes fullscreen, which is exactly when the
+   sync tool is needed. Both UI surfaces therefore live in whichever frame owns the video.
+
+   The upside: panel and overlay are in the same JavaScript context, so they call each other
+   directly. No cross-frame messaging is involved in subtitle state at all.
+
+   The cost: the panel is clipped to the player iframe's viewport in windowed mode. That's why it
+   is a compact, draggable, collapsible window rather than a sidebar.
+3. **No page-world script injection.** Content scripts run in an isolated world, which is enough:
+   we only need the raw `<video>` element, never JW Player's JS API. Staying out of the page world
+   sidesteps the site's CSP entirely.
+4. **Nothing runs on a site the user has not allowed.** The content script is injected everywhere
+   and gates itself at runtime against the allowlist (`src/lib/sites.ts`). Without that gate the
+   panel would appear over every video on the web, which is what the allowlist was added to stop.
+
+#### Scope boundary
+
+This overlays text on video the user is already playing in their own browser, and fetches
+*subtitle text files* from a public subtitle site at the user's request. It does not download,
+decrypt, deobfuscate, record, or redistribute **media**, and must not grow features that do.
+Subtitles are text the user asked for by name; the video is not, and is not touched.
+
+---
+
+### Stack
+
+| | |
+|---|---|
+| Platform | Chrome / Edge, Manifest V3 — and Firefox 128+, see *Firefox* below |
+| Language | TypeScript (strict) |
+| Build | Vite + `@crxjs/vite-plugin` v2 |
+| UI | React 18 + Tailwind, mounted into shadow DOM |
+| State | `zustand` (panel only) |
+
+No other runtime dependencies. The cue-list virtualization is hand-rolled (~30 lines) rather than
+pulling in `react-window`.
+
+### Commands
+
+```bash
+npm install
+npm run dev      # Vite watch + HMR for the panel UI
+npm run build    # production build into dist/
+npm run test     # vitest: parser, timing maths, cue lookup, allowlist matching
+npm run check    # typecheck + tests + build + verify, i.e. everything
+npm run build:firefox   # Firefox build into dist-firefox/
+npm run verify:firefox  # the same loadability check for dist-firefox/
+npm run verify   # assert dist/ is loadable — see the entry-basename gotcha
+npm run icons    # regenerate public/icons/* from tools/make-icons.mjs
+```
+
+Tests cover the pure logic — `lib/subtitles/parse.ts`, `lib/sync.ts`, `lib/subtitles/lookup.ts`,
+`lib/sites.ts`, `lib/searchTitle.ts`, and now `lib/subtitlecat/*` — because those are where a
+subtle error is invisible on screen. The DOM-facing parts (overlay positioning, detection) are
+verified through the harness instead. The subtitlecat parser runs under `happy-dom` in tests
+and under the offscreen document's `DOMParser` in the extension; it sees a `Document` either way.
+
+```bash
+LIVE=1 npm test  # also parse the real subtitlecat with the bundled selectors
+```
+
+The Find tab needs nothing running. `LIVE=1` is the first thing to run when someone reports
+that search finds nothing — it says within seconds whether subtitlecat changed their markup.
+
+### Committing
+
+**Commit and push after each batch of work.** A batch is one coherent change — a feature, a fix, a
+refactor — not a whole session's worth. Don't let finished work sit uncommitted.
+
+Run `npm run check` before committing. Every commit should build and have passing tests; a broken
+commit makes `git bisect` useless later.
+
+Messages are short, simple and clear:
+
+- imperative mood, lowercase, no trailing full stop — `add drift fix`, not `Added drift fix.`
+- one line, roughly 50 characters, saying *what changed*
+- a body only when the *why* isn't obvious from the diff — then one blank line, then prose
+
+```
+add two-point drift fix to sync tool
+fix overlay vanishing in fullscreen
+lazy-load panel to keep content script small
+```
+
+Avoid `update code`, `fixes`, `wip`, and anything that restates the file name. If a message needs
+"and" in it, it is probably two commits.
+
+---
+
+**Loading it:** `chrome://extensions` → enable Developer mode → *Load unpacked* → select `dist/`.
+After a rebuild, hit the reload icon on the extension card, then reload the page under test —
+old content scripts do not survive an extension reload (see gotchas).
+
+**Shortcuts:** `Alt+Shift+S` toggles the panel, remappable at `chrome://extensions/shortcuts`.
+The toolbar icon opens the popup, which is where sites are allowed.
+
+**Icons:** `public/icons/` — generated by `npm run icons` from `tools/make-icons.mjs`, which draws
+the mark procedurally so the whole set stays consistent. To use different artwork, just overwrite
+the four PNGs; nothing but that script reads the SVG.
+
+**Developing offline:** run `npm run dev` and open <http://localhost:5173/test/local.html>. It
+generates a `blob:`-backed video (via canvas + MediaRecorder), which is the same shape as the
+real site's MSE player, and embeds a nested iframe with a second one. Detection, overlay, styling
+and sync can all be exercised there without the site being up. Only genuine *cross-origin* iframe
+behaviour requires the real site.
+
+The clip has a clock burned into it, and `test/sample.srt` announces in each cue the timecode it
+should appear at — so timing errors are visible rather than a matter of judgement.
+`test/sample-drift.srt` carries the same lines authored at 25 fps instead of 23.976, which is the
+fixture for the two-point drift fit. Both are produced by `node test/generate-samples.mjs`.
+
+Serving over `http://localhost` rather than `file://` is deliberate: file URLs need the extension's
+"Allow access to file URLs" toggle turned on, which is easy to forget and looks exactly like a
+detection bug. `localhost` is in the default allowlist for the same reason — otherwise the harness
+would come up dead and look like one too.
+
+---
+
+### Structure
+
+```
+src/
+  manifest.config.ts     MV3 manifest, authored as TypeScript
+  types.ts               Cue, SyncState, SubtitleStyle, the message unions
+
+  lib/
+    subtitles/parse.ts   parseSRT / parseVTT / sniffFormat / decode with encoding fallback
+    subtitles/lookup.ts  cursor-cached binary search over sorted cues
+    sync.ts              applyTransform, onePointAnchor, twoPointFit, FPS_RATIOS
+    tv.ts                seasons, episodes, next/previous, query formatting — pure
+    tvmaze.ts            the TVmaze client and its caches — SERVICE WORKER ONLY
+    style.ts             DEFAULT_STYLE, the clamps, and the stack + per-block CSS
+    sites.ts             the allowlist: normalising, matching, storage, top-host resolution
+    api.ts               subtitle search: fetch subtitlecat, cache, answer the panel — SERVICE WORKER ONLY
+    api-types.ts         the shapes the panel consumes; began as web/lib/api-types.ts, no longer tied to it
+    languages.ts         copy of web/lib/languages.ts — keep identical
+    donate.ts            validators for the donation prompt — pure, see below
+    subtitlecat/
+      config.ts          RemoteConfig, DEFAULT_CONFIG (selectors, site, donate), readConfig — pure
+      remote.ts          fetching and caching remote/config.json — SERVICE WORKER ONLY
+      http.ts            fetchText, resolveUpstream: the only code that talks to subtitlecat — SERVICE WORKER ONLY
+      parse.ts           HTML → Release / Track, driven by the selectors — OFFSCREEN DOCUMENT
+    searchTitle.ts       guesses a film title from the tab's <title> to seed the search box
+    messaging.ts         typed wrappers over chrome.runtime / chrome.tabs messaging
+    storage.ts           style + allowlist + language → sync; per-film track and timing → local
+    videoKey.ts          stable per-film id (top page path + title + rounded duration)
+    log.ts               console logger, off unless the page flag is set
+
+  background/
+    service-worker.ts    message router, per-tab detection hints for the popup
+    offscreen.ts         opens/closes the offscreen document and relays parse requests to it
+
+  offscreen/
+    offscreen.html       an invisible extension page — exists so the worker has a DOMParser
+    offscreen.ts         answers parse:search / parse:detail with JSON
+
+  content/
+    content-script.ts    entry: runs in EVERY frame, gates on the allowlist, owns the session
+    video-agent.ts       finds the film's <video> in this frame
+    overlay.ts           shadow-DOM renderer, rect tracking, fullscreen handling
+    panel-host.ts        mounts the React panel — only in the frame that owns the video
+
+  panel/                 React app rendered in-page (Dropzone, StyleControls, SyncTool, CueList, …)
+  popup/                 toolbar popup: allow/block the current site, open the panel
+
+public/icons/            generated by `npm run icons`
+tools/make-icons.mjs     the generator
+remote/config.json       selectors + donation prompt, published to the public config repo. See remote/README.md
+tools/publish-config.mjs pushes remote/config.json to escaper01/subtitler-config via the GitHub API
+```
+
+**Panel size.** The panel is `40%` of the player's width (floor 320 px, never wider than the
+player) and a Tailwind `@container`, so the Style tab goes to three columns once the panel is
+wide enough. Dragging clamps against the player, so it cannot be stranded off-screen.
+
+#### Where things run
+
+| Context | Files | Notes |
+|---|---|---|
+| Every frame | `content/content-script.ts`, `lib/sites.ts` | `all_frames: true`, `document_start`; stands down unless the site is allowed |
+| The video's frame | `content/overlay.ts`, `content/panel-host.ts`, `panel/*` | whichever frame won detection |
+| Service worker |  `background/service-worker.ts`, `background/offscreen.ts`, `lib/api.ts`, `lib/subtitlecat/{http,remote}.ts`, `lib/tvmaze.ts` | the only context that can see the whole tab, and the only one that may `fetch` |
+| Offscreen document | `offscreen/*`, `lib/subtitlecat/parse.ts` | opened by the worker when a search needs parsing, closed shortly after; has a DOM, never shown |
+| Extension page | `popup/*` | the toolbar popup |
+
+---
+
+### Message passing
+
+Subtitle state does **not** cross a context boundary — the panel and the overlay share a frame
+and call each other directly. Neither does the allowlist: every context reads it from
+`storage.sync` and reacts to `storage.onChanged`, so switching a site on or off needs no
+messaging at all and takes effect without a reload. Only these cross the boundary, and all of
+them go through the service worker:
+
+```
+content script  --sendToBackground-->  background     video-seen, video-detected, get-top-url
+background      --broadcastToTab---->  content script toggle-panel
+popup           --askBackground----->  background     tab state, toggle-panel relay
+panel           --askBackground----->  background     api:search, api:release, api:download
+panel/popup     --askBackground----->  background     donate
+background      --sendMessage------->  offscreen      parse:search, parse:detail
+```
+
+The `api:` line is not a stylistic choice. **The panel cannot fetch subtitlecat itself:** an
+MV3 content script's `fetch` is subject to the *page's* CORS rules, while the service worker's
+is governed by our host permissions. `lib/api.ts` therefore runs in the worker only — importing
+it from the panel produces code that fails on someone else's site and works on yours. The
+`api:` prefix is historical; nothing behind it is an API any more.
+
+The last line is the one this build added. **The worker has no DOM**, so the HTML it fetched
+is handed to the offscreen document, which parses it and answers with JSON. Those messages
+carry `target: 'offscreen'` — every runtime listener sees every runtime message, and the
+offscreen listener must ignore the panel's (and return `false`, so the channel is left to the
+worker). The selectors travel inside the message, so the offscreen document never loads the
+config itself.
+
+All message shapes live in the `ToBackground` / `ToContent` / `ToBackgroundFromPopup` /
+`ToOffscreen` unions in `src/types.ts`.
+
+**To add a message type:** add a variant to the relevant union, then handle it in
+`background/service-worker.ts`'s router and in whichever context receives it. Those `switch` statements
+have no `default` case on purpose — keep it that way, so an unhandled variant is a type error.
+
+The service worker is suspended after ~30s idle, so **nothing may assume its in-memory state
+survives**. What it holds — which tabs turned out to contain a film — is a hint for the popup,
+mirrored into `storage.session` and restored on wake.
+
+---
+
+### The site allowlist
+
+`src/lib/sites.ts`. Stored in `storage.sync` under `sites`; the defaults in
+`DEFAULT_ALLOWED_SITES` apply until the user changes anything, after which the stored list is
+the whole truth. Users edit it from the toolbar popup or the panel's **Sites** tab, both of
+which render the same `SitesEditor`.
+
+Two things about it are load-bearing:
+
+- **It is matched against the tab's top-level host, never the frame's.** The film plays inside a
+  cross-origin embed iframe on a rotating domain that no user would think to allow — `hdfilme.to`
+  is the site, `dr0pstream.com` is an implementation detail of it. A frame gets the top host from
+  `location.ancestorOrigins` without any messaging, which matters at `document_start`; the
+  service worker is asked only when an ancestor is opaque.
+- **The manifest therefore still matches `<all_urls>`.** An allowlist expressed as manifest
+  `matches` would exclude the one frame that actually contains the video. The gate has to be at
+  runtime.
+
+Matching is by domain suffix, so a rule covers its subdomains. Turning the switch off for a host
+removes *every* rule covering it, not just an exact match — otherwise switching `www.example.com`
+off would leave an `example.com` rule behind and the switch would flick straight back on.
+
+---
+
+### Subtitle search
+
+The **Find** tab searches subtitlecat **directly, from the service worker**. The retired
+`extension/` build went through the `web/` API instead, for three reasons: the parsing lived
+server-side so a markup change was a deploy rather than an extension update; a rate limiter sat
+in front of the API; and the subtitle files were relayed rather than redirected. This build has
+no server and pays for each of those differently:
+
+**Parsing is client-side, but the selectors are data.** `lib/subtitlecat/parse.ts` is the
+server's cheerio parser ported onto the DOM, and every selector it uses is a field of
+`RemoteConfig` (`lib/subtitlecat/config.ts`). The worker fetches `config.json` from the
+public `escaper01/subtitler-config` repository on GitHub (`lib/subtitlecat/remote.ts`),
+caches it in `storage.local` for six hours, and falls back to the bundled `DEFAULT_CONFIG`
+when it cannot. The file is **authored here** as `remote/config.json` — where the tests
+check it — and pushed there by `npm run config:publish`; it lives in a second repository
+only because this one is private and raw GitHub will not serve a private file. So when
+subtitlecat renames a class, the fix is an edit to that JSON file and a publish — see
+`remote/README.md`. A redesigned page is still a new build; the config covers the common
+case, not every case.
+
+Three things about the config are deliberate:
+
+- **Every field falls back on its own.** `readConfig` never throws; a malformed value
+  degrades to the bundled one. A selector that does not *parse* cannot be caught there
+  (there is no DOM in the worker), so the offscreen document reports it and `lib/api.ts`
+  retries the parse with the bundled selectors. A typo in the remote file costs one extra
+  parse per page, not every search until it is fixed.
+- **`base` must be an `https` origin, `searchPath` must start with `/` and carry
+  `{query}`.** The config is trusted exactly as much as the repository is — it can also
+  change where donations go — but a plain `http` base or an absolute search URL is never
+  a legitimate edit and is refused.
+- **`remote.test.ts` asserts the remote file matches `DEFAULT_CONFIG`.** They should agree
+  at the moment a build is cut; a fresh install should not behave differently from an
+  established one for its first six hours. React to a site change by editing the remote
+  file first, then bring the default up to match before the next build.
+
+**No rate limiter, because there is nothing to protect.** The server's limiter existed so
+the API could not be used as someone's free scraping backend. With no server, each user
+reaches subtitlecat from their own address, exactly as their browser would, and the site's
+own limits apply to them alone. A subtitlecat `429` comes back as `code: 'rate_limited'`,
+which `Refusal` in `FindTab` renders amber rather than red — waiting is not the same as
+broken. The install id and its `X-Subtitler-Install` header are gone with the limiter; this
+build sends nothing that identifies the installation to anyone.
+
+**`www.` is not off-site.** subtitlecat answers `subtitlecat.com/subs/…` with a redirect to
+`www.subtitlecat.com`. `fetchText` once compared origins exactly, called that an off-site
+redirect, and failed every release fetch — which the panel showed as a result stuck on
+"Loading…". `sameSite` now ignores a leading `www.`; the scheme must still match and any
+other host is still refused, with the host named in the error.
+
+**Fetches obey the same rules the server's did.** `lib/subtitlecat/http.ts` is the only
+code that talks to the site: a timeout, a 4 MB response cap, and `resolveUpstream`, which
+resolves every path against the site's origin and refuses anything that lands elsewhere —
+an absolute URL, a protocol-relative `//evil.com`, a `..` climb. Paths come out of parsed
+HTML and back from the panel, so that check is the boundary.
+
+**Parsing happens in an offscreen document.** A service worker has no `DOMParser`; the
+popup has one but is open for seconds at a time; the content script has one but runs inside
+somebody else's page. MV3's answer is `chrome.offscreen`: `background/offscreen.ts` opens
+`offscreen/offscreen.html` with the `DOM_PARSER` reason when a parse is needed and closes it
+thirty seconds after the last one — long enough to cover the pause between a search page and
+its five detail pages, so a search does not pay for the document twice. Chrome allows one
+per extension, so creation is serialised and "already exists" is not an error. `DOMParser`
+yields an inert document: no script runs, no image loads. Subtitlecat's markup is untrusted
+and that is where it is handled. The `offscreen` permission in the manifest is for this.
+
+**Caching, around a worker that gets suspended.** As with TVmaze: nothing lives in worker
+memory. Search results and release pages go in `storage.session` (`sc:search:*`,
+`sc:detail:*`), six hours and one hour respectively — so flipping the second language or
+paging back does not refetch. The config goes in `storage.local`, because it should survive
+a browser restart. What is cached is per install; there is no shared cache any more, and a
+popular film is fetched once per person rather than once for everyone.
+
+**The shapes did not change.** `lib/api.ts` still exports `searchSubtitles`, `fetchRelease`,
+`downloadSubtitle` and `fetchDonatePrompt` returning `ApiResult<T>`, and `lib/api-types.ts`
+still describes `Release`, `Track`, `SearchResponse` and `ReleaseResponse` — which is why
+`panel/store.ts`, `FindTab` and the popup never learned the server was gone. What went: `ApiFailure.action` (a server-owned button, for a server that could move it) and
+the `server` error code.
+
+**Search is free, like everything else.** There is no licence key, no sign-in and no
+credential of any kind.
+
+The manifest pins its own `key` — `extension-isolated/key.pem`, distinct from the other two
+builds', which is what lets all three be installed at once. Back it up.
+
+**The donation prompt** (`PanelBanner`, and `DonateLine` in the popup) comes from the same
+`remote/config.json`, under `donate`. Its heading, message, colour and links are rendered
+**inside somebody else's page** — as text, never markup, with the colour only ever an inline
+style value. `lib/donate.ts` is the validating half of `web/lib/donate.ts`, run on this side
+now that there is no server side: `http`/`https` URLs only, `#rrggbb` only, every string
+collapsed and capped, and a link that fails is dropped rather than rendered dead.
+
+The UI mirrors what the search actually returns: a list of *releases* (someone's upload, named
+after the video file it was timed against), each holding one subtitle per language. Picking by
+filename is not cosmetic — a track timed against the same rip needs no syncing at all, which is
+why the release name is the most prominent thing in the row and the language is secondary.
+
+The search box is *seeded* from the tab's title via `guessSearchTitle`, never searched
+automatically: the guess is often right and sometimes comically wrong, and the user is looking
+straight at an editable input either way.
+
+**One language per search.** The search language lives in `storage.sync` under `langs` and
+defaults to `en`; the loader still accepts the array earlier versions wrote and takes its first
+entry, so nobody's choice is silently reset. Changing it re-runs the search rather than
+clearing it — the query has not changed and the search page is cached in `storage.session`, so
+it costs nothing upstream: a release page carries every language, and the filter runs over
+data already in hand.
+
+#### One track
+
+There is one subtitle track. An earlier version of this build could show two at once
+(a second language above the first, timed separately); it was removed outright rather than
+hidden, so there is no mode, no second slot and no second language to pick. `storage.ts`
+still *reads* what that version wrote — a film's `slots[0]` is loaded as its track — so
+nobody's saved timing is lost; `style2`, `dual` and `langs2` are never read, and the first two
+are cleared from `storage.sync` the next time the style is saved.
+
+Search asks for one language (`lang=en`). `lib/api.ts` still accepts a comma-separated list
+and returns tracks in the order asked for; nothing sends more than one.
+
+Results are paged, five per page, and every release on a page arrives expanded. That bound is
+the point: without it a search for a popular film meant thirty-odd detail fetches against
+someone else's site. A release whose detail fetch fails is shown with a **Retry** button
+(`FindState.failed`) — without that state it was indistinguishable from one still loading.
+
+---
+
+### The series browser
+
+Picking a show, a season and an episode, so a search for episode four is a click rather
+than typing `Person of Interest s01e04` for the fourth time this evening. It sits at the top
+of the **Find** tab and its only output is the query in the box below it.
+
+**Data from TVmaze, direct from the service worker.** No API key and a stable contract.
+It is one of two hosts the worker calls, beside subtitlecat. It has to run in the worker: a
+content script's `fetch` obeys the *page's* CSP, so calling it from the panel works on the
+harness and fails on a site with a strict `connect-src`.
+
+**One request per show, and not the obvious one.** `/shows/:id/episodes`, grouped by season
+— **never `/shows/:id/seasons`**. That endpoint's `episodeOrder` is null for a season still
+airing and is the *ordered* count rather than the episodes actually listed, so the shows
+somebody is most likely to be watching are exactly the ones it gets wrong. Counting the real
+list cannot fail that way and costs one fetch instead of two.
+
+**Next/previous walk the list, they do not add one.** Season one ends at 7 for one show and
+23 for another, so `episode + 1` is right until it silently is not — and the failure looks
+like a search that found nothing rather than like a bug. Holding the real episode list is
+what makes the season boundary correct, and it is also what makes a gap in the numbering
+(a withdrawn episode) step over rather than into. There are tests for both.
+
+**Specials are dropped** — season 0, or a null episode number. `s00e01` is not something you
+can search a subtitle site for.
+
+**No poster images.** TVmaze serves them from `static.tvmaze.com`, and the panel renders in
+a shadow root inside *somebody else's document*; images in a shadow root still obey the host
+page's `img-src`, so posters would load on some sites and silently fail on others, which
+reads as a bug. Name, year, network and status are enough to tell two shows apart.
+
+**Caching, around a worker that gets suspended.** Nothing may live in worker memory — it
+would appear to work in development and miss constantly in real use. Searches go in
+`storage.session` (cheap to refetch, gone when the browser closes); episode lists go in
+`storage.local` with a seven-day TTL, which is what makes *Next* instant a week later.
+
+**The position advances when a search runs, not when a subtitle loads.** Finding a track
+that actually fits often takes two or three attempts on one episode, and a counter running
+ahead of the user is worse than one they press once.
+
+`lib/tv.ts` is the pure half — grouping, walking, query formatting, the remembered list —
+and holds all the tests. `lib/tvmaze.ts` is fetching and caching, worker-only.
+`panel/tvStore.ts` is a **separate zustand store** from `usePanel`: it owns no subtitle
+state and touches the panel only to set the query and press Search. That seam keeps the
+whole feature a clean deletion if it is ever not wanted.
+
+**Television only.** TVmaze has no films, and there is no comparable film database that
+works without an API key — the Studio Ghibli one is about twenty titles. For a film the
+query box is typed into directly, seeded from the page title by `guessSearchTitle`, exactly
+as before. If film metadata is ever wanted it means TMDb or OMDb and therefore a key — and
+a key cannot ship inside an extension anybody can unzip, so that feature would need a server
+again. It is the one thing this build's design rules out.
+
+### Subtitle timing model
+
+One transform applies to the whole track:
+
+```
+subtitleAppearsAt = cue.start * scale + offset      // defaults: scale = 1, offset = 0
+```
+
+- **1-point anchor** — the user clicks the line being spoken right now, at video time `T`:
+  `offset = T - cue.start * scale`. Fixes a constant offset.
+- **2-point fit** — anchors near the start and near the end:
+  `scale = (T₂ - T₁) / (c₂.start - c₁.start)`, then `offset = T₁ - c₁.start * scale`.
+  Fixes progressive drift, which is almost always a framerate mismatch: a 25 fps subtitle track
+  against a 23.976 fps rip drifts ~4.3 %, i.e. 10+ seconds by the end of a film.
+
+Guards in `lib/sync.ts`: anchors must be ≥ 60 s apart, `scale` is clamped to `[0.9, 1.1]`, and
+when the fitted scale lands within 0.3 % of a known ratio in `FPS_RATIOS` the UI offers to snap
+to the exact value.
+
+---
+
+### Gotchas
+
+Each of these has cost real debugging time. They are handled in the code; don't regress them.
+
+- **Fullscreen reparenting.** Only descendants of `document.fullscreenElement` render in
+  fullscreen. On `fullscreenchange` / `webkitfullscreenchange` the overlay root must be
+  re-`appendChild`-ed into the new fullscreen element. This is the #1 way subtitle overlays break.
+- **Ads and prerolls fire `play` too.** Detection requires `readyState >= 2` and `duration > 90 s`,
+  and picks the largest rendered video when several qualify. If `duration` is `NaN`/`Infinity` at
+  play time, wait for `loadedmetadata` and re-evaluate.
+- **The `<video>` is re-created on quality switch.** The `MutationObserver` must detach and
+  re-attach the overlay rather than holding a stale element reference.
+- **"Extension context invalidated."** After reloading the extension, content scripts from the
+  previous load remain on the page and throw on every `chrome.*` call. Guard entry points with
+  `if (!chrome.runtime?.id) return;` and tear listeners down.
+- **Tailwind in shadow DOM.** Import the built CSS with `?inline` and install it on the shadow
+  root via `adoptedStyleSheets`. Never let preflight into the host page.
+- **Use `requestVideoFrameCallback`, not `timeupdate`.** `timeupdate` fires ~4×/sec, which makes
+  subtitles visibly late. The cue loop reads `currentTime` per frame and only touches the DOM when
+  the active cue index actually changes.
+- **Position against the picture, not the element.** Derive the letterbox bars from
+  `videoWidth`/`videoHeight` versus the element's `getBoundingClientRect()`, so text sits inside
+  the image rather than floating over a black bar (the `anchorTo` style option switches this).
+- **`<all_urls>` is deliberate.** Both the site domain and the embed host rotate, and the embed
+  frame is the one that holds the video — so injection has to be broad and the *allowlist* has to
+  be the thing that narrows it, at runtime. See the allowlist section above.
+
+- **A disabled site must tear down, not just hide.** Switching a site off destroys the overlay,
+  disposes the detector and unmounts the panel; switching it on builds all three fresh. Anything
+  that caches an element or a listener across that boundary will keep drawing on a page the user
+  has just switched off.
+
+- **Register `chrome.runtime` listeners once, outside the session.** The session is built and torn
+  down every time the allowlist changes, and a listener registered inside it leaks one per toggle.
+
+- **Typing over a video needs help.** Players bind space to play/pause, and often do it from a
+  `document` listener in the **capture** phase — which runs before the event reaches our input
+  and calls `preventDefault()` to stop the page scrolling, cancelling the character insertion
+  too. The space then never appears, and which player is underneath decides whether it works.
+  `TextInput` in `panel/components/ui.tsx` handles it: every key event stops at the panel, and a
+  space that was already cancelled upstream is inserted by hand with the caret restored. Use
+  `TextInput` for panel inputs rather than a bare `<input>`.
+
+- **Entry points must not share a basename.** Rollup names each output chunk after its entry's
+  basename, so `background/index.ts` and `content/index.ts` both emitted `index.ts-<hash>.js` —
+  and the generated `service-worker-loader.js` bound to the *content script*. The worker then ran
+  content-script code, threw on `window` (a worker has none) before registering any listener, and
+  every `sendMessage` failed with "Receiving end does not exist" from then on. Nothing logs it:
+  the extension just stops answering, and subtitlecat is never called. Hence the entries are
+  named `service-worker.ts` and `content-script.ts`, and `npm run verify` asserts each loader
+  resolves to a chunk built from the entry it names — and that the offscreen page made it into
+  `dist/`, since it is opened by URL and nothing else notices when it is missing.
+
+- **Every runtime listener sees every runtime message.** `chrome.runtime.sendMessage` from the
+  panel reaches the worker, the popup if it is open, *and* the offscreen document if it is
+  open. Chrome answers with whichever listener responds first. The offscreen listener therefore
+  checks `target === 'offscreen'` and returns `false` for anything else; a listener that
+  answered `undefined` to an `api:search` would race the worker and sometimes win.
+
+---
+
+### Debugging a failure on the live site
+
+There is no debug UI; the site is inspected through its own console.
+
+Logging is off by default — this script runs in every frame of an allowed page, including the
+player's iframe, and a running commentary in the site's console is not something to inflict
+uninvited. To turn it on for a page:
+
+```js
+localStorage['subtitler:debug'] = '1'   // then reload
+```
+
+Every frame then reports what it found and why it skipped it: `[subtitler:gate]` for the
+allowlist decision, `[subtitler:detect]` for each `<video>` considered and the reason it was
+passed over, `[subtitler:overlay]` for attachment. Errors always print, flag or not.
+
+The player's iframe has its own console context — pick it from the frame dropdown in devtools, or
+the detection logs will look as though they never happened. Loading the embed URL directly in a
+tab isolates player problems from iframe problems.
+
+---
+
+## The web app (`web/`)
+
+Next.js app serving a subtitle search API, the public site, and the admin dashboard at
+`/admin`.
+
+**The extension in this repository does not call it.** `extension-isolated/` searches
+subtitlecat itself and reads its donation prompt from a JSON file on GitHub. This app is what
+the two retired builds talked to, and is kept as it was; nothing here needs to run for the
+extension to work. Several passages below say "the extension" — read them as "a client of
+this API".
+
+**There is no money in this codebase.** Subscriptions, licence keys, entitlements, trials,
+device limits and customer accounts were all removed — the extension is free and carries no
+credential. What replaced the gate is a rate limiter, and that is the single most important
+thing to understand before changing anything here. See *No money, and what guards the API*
+below.
+
+### Setting it up from scratch
+
+Needs Docker and Node 20+. From `web/`:
+
+```bash
+npm install                  # also runs `prisma generate`
+cp .env.example .env         # then fill in the two Google values, see below
+npm run setup                # starts Postgres in Docker and runs the migrations
+npm run db:seed              # puts you in the Admin table
+npm run app:up               # builds and starts the app container
+```
+
+### How it runs
+
+**The app is a container, not a dev server you remember to start.** `docker-compose.yml`
+holds three services:
+
+| service   | what it is                          | where                     |
+|-----------|-------------------------------------|---------------------------|
+| `db`      | Postgres 17, `restart: unless-stopped` | host `5433` -> `5432`   |
+| `migrate` | one-shot `prisma migrate deploy`, then exits | —                |
+| `web`     | this app, `restart: unless-stopped`  | host **`47821`** -> `3000` |
+
+`web` waits on `migrate` completing *successfully*, so a failed migration stops the app from
+serving rather than letting it serve a schema it does not match. `docker compose logs migrate`
+says why.
+
+**Port 47821, not 3000.** 3000 is the first port every other project on the machine claims,
+and losing that race is not a connection error — the extension reaches whatever else is
+listening and faithfully reports its answers. The number appears in four places and they must
+agree: `docker-compose.yml` (published port *and* the `NEXT_PUBLIC_SITE_URL` build arg),
+`.env` (`NEXTAUTH_URL`, `NEXT_PUBLIC_SITE_URL`), `lib/site.ts` (the fallback), and
+`DEFAULT_API_BASE` in the retired extensions, if one is ever restored from git.
+
+Two things about the container that are easy to get wrong:
+
+- **`DATABASE_URL` differs by caller.** The container is given `db:5432` in
+  `docker-compose.yml`, which overrides the `localhost:5433` in `.env`. That `.env` value is
+  not wrong — it is for host tooling (`prisma migrate`, `prisma studio`, `npm run dev`).
+  Inside a container `localhost` is the container.
+- **`NEXT_PUBLIC_*` is baked in at build time.** It is substituted into the client bundle by
+  `next build`, so setting it as runtime environment does nothing. It is passed as a Docker
+  build argument instead, which is why changing it needs `npm run app:up` (with `--build`)
+  rather than `app:start`.
+
+`output: 'standalone'` in `next.config.ts` exists for this image, and the site pages that read
+donation rows are `force-dynamic` so `next build` needs no database — otherwise the image
+could not build without one on the network.
+
+#### Still developing the web app?
+
+`npm run dev` on port 3000 with hot reload, at the same time as the container.
+
+`npm run setup` is `docker compose up -d --wait && prisma migrate dev --name init`. The
+`--wait` matters: Compose reports the container started as soon as the process spawns, but
+Postgres accepts connections a moment later, and a migration run into that gap fails about
+half the time.
+
+#### The environment file
+
+`.env` is git-ignored; `.env.example` is the committed template and explains every value.
+Next reads `.env.local` first and `.env` second, so use `.env.local` for per-machine
+overrides.
+
+- **`DATABASE_URL`** — already correct for the Docker database. Host port is **5433**, not
+  5432, because 5432 is commonly already occupied; a clash there surfaces as an auth
+  failure against somebody else's database rather than as "port in use".
+- **Two values you generate, not fetch** — `NEXTAUTH_SECRET` and `IP_HASH_SALT`. Both are
+  just long random strings:
+  ```bash
+  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  ```
+  Run it once **per variable**. They are unrelated secrets with different consequences when
+  rotated, so reusing one value means rotating it drags the other along:
+  - `NEXTAUTH_SECRET` signs the session cookie — changing it signs every admin out. At least
+    32 characters, and a different value in production than in development.
+  - `IP_HASH_SALT` salts the stored hash of a caller's IP. It used to be for abuse
+    *history*; it is now part of the abuse *guard*, because the IP hash is one of the two
+    subjects the rate limiter counts against. Rotating it still only resets history, so it
+    remains the safe one to rotate.
+- **`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`** — the only two you must fetch by hand.
+  Google Cloud console → APIs & Services → Credentials → Create credentials → OAuth client
+  ID → Web application. The authorised redirect URI must be exactly
+  `<NEXTAUTH_URL>/api/auth/callback/google`. Until these are set, `/admin` cannot be signed
+  into; everything else runs.
+- **Nothing about money.** There is no payment provider, no checkout and nothing to
+  configure. Donations are links to somewhere else, stored as rows and edited at
+  `/admin/donations`.
+
+`TRIAL_HASH_SALT`, `DEVICE_HASH_SALT`, `ENFORCE_ENTITLEMENT`, `RESEND_API_KEY` and
+`EMAIL_FROM` were all removed. An existing `.env` carrying them still works — they are
+simply ignored.
+
+There is no `ADMIN_EMAILS`. Admins are rows in the database — see below.
+
+### Commands
+
+```bash
+npm run app:up     # build + start the container — http://localhost:47821
+npm run app:start  # start it without rebuilding
+npm run app:down   # stop the whole stack
+npm run app:logs   # follow the app's logs
+npm run app:restart# restart just the app
+
+npm run dev        # hot-reload dev server on :3000, for editing this app
+npm run build
+npm run test       # parser tests, offline
+npm run check      # typecheck + tests
+LIVE=1 npm test    # also hits the real subtitlecat (see below)
+
+npm run db:up      # start Postgres
+npm run db:down    # stop it (data kept)
+npm run db:reset   # destroy the data, recreate, migrate, re-seed
+npm run db:migrate # after editing schema.prisma
+npm run db:seed    # re-apply the admin list
+npm run db:studio  # browse the data
+```
+
+### Stack
+
+Next.js 15 App Router, React 19, Tailwind v4, TypeScript strict, `cheerio` for parsing. Mirrors
+the StudyPartner admin dashboard so the two are navigable as one codebase — including its
+conventions: NextAuth v4 with Google and an email allowlist, `middleware.ts` gating `/admin/*`
+server-side (a client-only guard still ships the page bundle to strangers), SWR for data, and
+hand-rolled UI primitives and Tailwind bar charts rather than component and chart libraries.
+
+Next is pinned **above** StudyPartner's `15.4.4`, which carries a long list of advisories
+including middleware/proxy bypasses — directly relevant to gating `/admin`. Worth fixing there
+too. Two transitive advisories remain (`postcss`, `sharp`, both inside Next); clearing them needs
+Next 16, and neither surface is used here.
+
+### The API
+
+```
+GET  /api/search?q=<title>&lang=en&page=1   one page of releases, each already expanded
+GET  /api/release?path=<release>&lang=en    one release
+     ...&lang=en,de                         both forms take one or two languages
+GET  /api/download?path=<srt>               the subtitle text itself
+GET  /api/donate                            the donation prompt and its buttons
+POST /api/feedback                          bug reports and feature requests (public)
+```
+
+**One or two languages, and each must be one we offer.** An unknown code is a 400, not an
+empty result: silently filtering everything away is indistinguishable from "this film has
+no subtitles", which is a far worse thing to debug than an error. `q` is 2–100 characters
+with whitespace collapsed, so `"  the   matrix "` and `"the matrix"` are one cache entry.
+
+**Asking for two costs exactly what asking for one costs, and this is the point.**
+`releaseTracks` fetches a release page once and it already carries *every* language;
+`filterByLanguages` is post-processing over data that is in hand either way, and
+`detailCache` is keyed on the release id rather than the language. So a client wanting
+two languages sends `lang=en,de` in the one search rather than making a second request per
+release — which would spend a rate-limit token to re-filter a cache hit. (The retired
+`extension/` build did this for its dual subtitles.)
+
+The cap is `MAX_LANGUAGES` (2), and it is about response size rather than upstream cost:
+five releases times a hundred and fifty machine translations is a large body to send for no
+reason. Order is preserved — the caller's first language is their primary subtitle track,
+and each release's tracks come back in that order so the client need not re-sort a list it
+did not build.
+
+A page is `PAGE_SIZE` (5) releases and **every release on it is expanded**, so a page is
+also the unit of upstream work: one search fetch plus five detail fetches, regardless of
+how many releases matched. That bound is the reason paging exists — 31 results used to
+mean 31 potential detail fetches.
+
+CORS is `*` on purpose: the caller is an opaque `chrome-extension://` origin that cannot be
+allowlisted usefully. There are no cookies on these routes and no credential of any kind, so
+credentials stay off and `*` remains safe. **Never add `Access-Control-Allow-Credentials`
+beside the wildcard** — the app's own session-bearing routes use `lib/appApi.ts`, which
+emits no CORS headers at all, and that separation is the reason it exists.
+
+`/api/donate` was the only call the retired no-search build ever made.
+
+### The public site
+
+```
+app/(site)/                header + footer wrap everything in this group
+  page.tsx                 home
+  donate/                  where /pricing used to be
+  how-to-use/              the guide
+  privacy/                 written from what the code actually stores
+  report/                  bug reports
+  feature-request/         feature requests
+app/admin/                 outside the group — its own shell, no marketing chrome
+```
+
+**The palette encodes sync state.** Amber (`--drift`) is a subtitle that has drifted; sky
+(`--accent`) is one that lands on the word. They mean nothing else anywhere on the site, so
+don't reach for either as a general-purpose highlight. The hero's caption animates between
+the two — that drift-and-snap is the product's whole argument, shown instead of described.
+
+**Theme.** Class-based (`.dark` on `<html>`), with an inline script in the root layout that
+applies the stored choice before first paint. It has to be inline and synchronous or the
+page flashes light before dark lands. Colours are CSS variables mapped into Tailwind via
+`@theme inline`, so `bg-surface` and `text-muted` work in both themes — use the tokens
+rather than `neutral-*`, which cannot flip.
+
+**Screenshots are placeholders.** `public/screenshots/*.svg`, generated by
+`node tools/make-placeholders.mjs`. Replace a file with a real screenshot and nothing else
+changes; the paths live in `lib/features.ts`, which is also the single source for what the
+product does — home page, guide and store listing all drifted apart when they were written
+separately. Images are 16:10.
+
+**The store URL** is a placeholder in `lib/site.ts` until the listing is published. Set
+`NEXT_PUBLIC_STORE_URL` and every "Add to Chrome" button follows.
+
+### No money, and what guards the API
+
+There was a paywall. It is gone, and what it left behind is the most important thing on this
+page.
+
+**Deleted:** `lib/entitlement.ts`, `lib/license.ts`, `lib/gate.ts`, `lib/requireUser.ts`,
+`lib/customers.ts`, `lib/users.ts`, `lib/deviceSignal.ts`, `lib/email.ts`, the `User`,
+`Entitlement`, `License`, `LicenseActivation`, `TrialClaim`, `Plan` and `DeviceSignal`
+tables, `/pricing`, `/account`, `/signin`, `/admin/users`, `/admin/licenses`, `/api/trial`,
+`/api/me` and `/api/account/device`. The extension sends no credential and there is nothing
+to sign in to.
+
+#### The consequence, stated plainly
+
+`requireEntitlement` used to run on `search`, `release` **and** `download`. Removing it made
+all three **open, unauthenticated endpoints on the public internet** — a working subtitlecat
+scraping proxy running on your bill, available to anyone who reads the extension's source.
+
+**`lib/rateLimit.ts` is what replaced it, and it is now the only guard.** Treat it
+accordingly: a change that weakens it is not a tuning change, it is the whole defence.
+
+It counts every request against **two** subjects, and the pairing is the point:
+
+- **The install id** (`X-Subtitler-Install`) is generated by the extension and sent in a
+  header, so anyone can change it. It is precise — one browser profile — and forgeable.
+- **The hashed IP** cannot be chosen by the caller, but one address is routinely a whole
+  household or campus, so its bucket is `IP_MULTIPLIER` (5×) looser or a shared connection
+  becomes a single user.
+
+Each covers the other's blind spot: rotating the install id still runs into the address
+bucket, and a shared address does not punish everyone behind it for one abuser.
+
+Three things about it are load-bearing:
+
+- **A missing install header is not a bypass.** `callerSubjects` maps it to a single shared
+  `anonymous` bucket. Treating "no header" as "no limit" would make the limiter opt-in,
+  which is the same as not having one. There is a test for this.
+- **Search and fetch have separate allowances.** Loading a subtitle is one search *plus* one
+  download; counting both against one limit would halve the searches anyone could actually
+  complete. `checkFetchLimits` covers `release` and `download` at `FETCH_MULTIPLIER` (3×).
+- **It errs open.** A database failure lets the request through. Rate limiting is a guard
+  against abuse, not a security boundary, and turning a database blip into an outage for
+  everybody is the worse failure.
+
+The limits themselves are rows, read through `lib/settings.ts` and cached for 60 seconds. A
+limit that needs a deploy to change is one you cannot use while somebody is abusing the API,
+which is the only moment it matters.
+
+#### Donations
+
+The only thing resembling money. `DonationLink` rows are links to PayPal, Ko-fi or wherever
+else — edited at `/admin/donations`, rendered on the site and **inside the extension panel**.
+There is no payment provider and no checkout; nothing is charged and nothing is unlocked.
+
+**`lib/donate.ts` is a validation boundary, not a formatting helper.** Every string it
+returns is admin-supplied and ends up rendered by the extension inside pages we do not
+control:
+
+- `safeUrl` accepts `http`/`https` only. A `javascript:` href in an admin field would be
+  script execution in every page the extension touches; a `data:` one is a phishing page
+  served from our own button.
+- `safeColor` accepts `^#[0-9a-fA-F]{6}$` and nothing else, because the value reaches an
+  inline style attribute in two codebases.
+- Everything is rendered as **text**, never as markup. Shadow DOM contains a CSS injection;
+  it does not prevent one.
+
+Validation runs on the way in (`/api/admin/donations`) **and** on the way out
+(`donatePrompt`). In on the way in stops a bad row existing; out on the way out stops a row
+that already does from reaching the extension. A link that fails is dropped, not rendered
+dead — a button that goes nowhere is worse than no button.
+
+#### If money ever comes back
+
+Do not resurrect the old model from git. What it needed is unchanged and is written down in
+`PLAN.md`: an append-only entitlement ledger with one denormalised cache, a credential that
+is hashed rather than stored, a device count enforced by a unique index with the licence row
+locked `FOR UPDATE` before counting, and a webhook that verifies its signature over the
+**raw body**. Those were the parts worth keeping; the code around them was shaped by a
+provider that no longer exists.
+
+### Admin
+
+`/admin` is the submissions queue; `/admin/api` is the API reference, which used to sit on
+the public home page. Navigation is a left rail (`AdminNav`) that collapses to a strip of
+links on narrow screens. Both pages are gated in `middleware.ts` — server-side, before the
+route is served. A client-side guard would still ship the page bundle to a stranger.
+
+The rail is: overview, bug reports, requests, donations, settings, API reference. Badge
+counts come from a `groupBy` in the layout — the queue pages cap at 200 rows and filter by
+status, so counting fetched rows was wrong in both directions.
+
+The overview leads with the only operational question left: is the search API being used
+normally, or is somebody hammering it. **`Refused by the limiter`** is the tile to watch — a
+non-zero number is either abuse or a limit set too tight, and there is no longer a licence
+check behind it to fall back on.
+
+**Signing in is admin-only, and is a security boundary.** It briefly was not, when customers
+had accounts and `token.isAdmin` was what told an admin apart. There are no customer
+accounts now — no `User` table to put them in — so an address outside the `Admin` table has
+nothing it could do here and `signIn` refuses it outright. `requireAdmin()` stays on
+**every** `/api/admin/*` route regardless: middleware covers `/admin/*` pages only, and
+cannot reach Prisma from the edge runtime anyway.
+
+Auth is NextAuth + Google, checked against the **`Admin` table**, which is now the only kind
+of account in the schema. There are no roles, because there is exactly one kind of admin.
+`isAdmin` is re-derived from the database on **every** token refresh, so deleting a row ends
+that session's access at its next request rather than whenever it would have expired.
+
+`pages.signIn` points at `/admin/login`. It briefly pointed at a neutral `/signin` for
+customers; that route went with their accounts, and a failed sign-in landed on a 404.
+
+`isAdminEmail` errs closed: a database failure denies access instead of granting it.
+
+The list is seeded from `prisma/seed.mjs`, which upserts and so is safe to re-run. **An
+empty `Admin` table locks everyone out, including you** — to add someone, add them to that
+file and `npm run db:seed`, or insert a row by hand.
+
+`/api/admin/*` re-checks the session itself. Middleware only covers `/admin/*` pages; a
+mutating route under `/api/*` has to answer for itself rather than trust something upstream
+ran.
+
+Env validation happens at *request* time (`assertAuthEnv`), not at import. Validating at
+module load meant `next build` needed the production secrets just to collect page data.
+
+### Database
+
+Prisma 7 + Postgres. Six tables, and that is the whole of it:
+
+- `Admin` — who may sign in to the dashboard. The only account type in the system.
+- `Submission` — bug reports *and* feature requests; they differ by a label and are read
+  from one queue.
+- `DonationLink` — the buttons, edited at `/admin/donations`.
+- `SiteSetting` — a singleton row of admin-editable levers: the prompt wording and the
+  search limits.
+- `SearchLog` — what people looked for. Kept through the removal of accounts and re-pointed
+  at the install id, because it answers "what are we failing to find" and "is one install
+  hammering us", and both still matter.
+- `RateLimit` — fixed-window counters. In Postgres rather than the in-memory `TtlCache`
+  because that cache is per-instance and lost on cold start, which is useless for anything
+  an abuser benefits from resetting.
+
+Prisma 7 **removed `url` from the datasource block**: the connection string now lives in
+`prisma.config.ts` for the CLI, and reaches the client through a driver adapter
+(`@prisma/adapter-pg`) in `lib/db.ts`. Those are two separate paths now; setting only one
+gets you a CLI that migrates fine and an app that cannot connect.
+
+Prisma 7 also **stopped loading `.env` by itself**, which is why `prisma/load-env.mjs`
+exists and is called from both `prisma.config.ts` and the seed. Without it the CLI sees an
+empty connection string and reports it as a broken database rather than as unloaded config.
+
+After editing `schema.prisma`, run `npm run db:migrate` — and note that adding a model
+needs `prisma generate` before the client knows about it. `migrate dev` normally does that;
+if `db.something` is suddenly `undefined`, that generate did not happen.
+
+Without `DATABASE_URL` the site still builds and the scraping API still works — only
+`/admin` and `POST /api/feedback` fail, and both say so rather than showing a stack trace.
+
+### Scraping subtitlecat
+
+`lib/subtitlecat/`. `http.ts` owns every outbound request: one User-Agent, one timeout, one size
+cap, and `resolveUpstream`, which is **the SSRF boundary** — paths arrive from clients, so they
+are resolved against the base URL and the result must still be on subtitlecat. An absolute URL, a
+protocol-relative `//evil.com` and a `..` climb all fail identically. Do not bypass it.
+
+`parse.ts` is the fragile part and is written accordingly: selectors lean on structure
+(`table.sub-table tbody tr`, `.sub-single`) rather than the ad wrappers around them, and every
+field except the link is optional — a missing download count degrades a row instead of dropping
+it.
+
+#### Two upstream behaviours that will bite you
+
+- **A dead release answers 200.** It renders a "File Not Found" heading *and* a full grid of
+  language rows whose `.srt` files are the site's own 404 page machine-translated into each
+  language. Unchecked, those reach the panel as real choices and download as junk. `parseDetail`
+  returns `missing: true` for it and `releaseTracks` turns that into a 404. The `-->` check in
+  `downloadSubtitle` is the second line of defence.
+- **Most languages are machine translations.** The search table's "(translated from X)" is the
+  real source language, and a Translate *button* rather than a Download link means the file does
+  not exist yet — the site would generate it on request, which is not something we can wait on,
+  so those languages are simply omitted.
+
+#### When search stops working
+
+Run `LIVE=1 npm test` first. It hits the real site and is the only thing that catches "they
+changed their markup", which is the likeliest cause. Fix the selectors, then deploy — no
+extension release is involved.
+
+### Caching
+
+`lib/cache.ts`, in-memory with a TTL: searches for 6 hours, release pages for 1. On Vercel that
+means per-instance and lost on cold start, which is acceptable while the only cost is an extra
+upstream fetch.
+
+Note the deliberate split from `RateLimit`, which is in Postgres. Caching a subtitle page is
+worth doing and harmless to lose; a counter an abuser benefits from resetting is not
+something to keep in a cache that a cold start clears. Same problem shape, opposite storage,
+for that reason.

@@ -30,7 +30,7 @@ import { parseOffscreen } from '@/background/offscreen';
  *   - the install id header and the rate limiter it fed. Each user now reaches subtitlecat
  *     from their own address, which is what a browser does anyway.
  *   - the shared cache. What is cached here is per install, in `storage.session`, and
- *     exists so that flipping the second language or paging back does not refetch.
+ *     exists so that paging back does not refetch.
  *   - `apiBase`. There is nothing to point at.
  */
 

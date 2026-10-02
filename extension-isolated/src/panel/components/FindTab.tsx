@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
-import type { Release, Track } from '@/lib/api-types';
+import type { Release } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/api-types';
-import type { SlotId } from '@/types';
 import { usePanel, trackKey } from '@/panel/store';
 import { useTv } from '@/panel/tvStore';
-import { languageName } from '@/lib/languages';
-import { Button, InfoTooltip, TextInput } from '@/panel/components/ui';
+import { Button, TextInput } from '@/panel/components/ui';
 import { LanguagePicker } from '@/panel/components/LanguagePicker';
 import { SeriesBrowser } from '@/panel/components/SeriesBrowser';
 
@@ -24,33 +22,8 @@ const MAX_QUERY_LENGTH = 100;
  * you are watching needs no syncing at all.
  */
 export function FindTab() {
-  const find = usePanel((s) => s.find);
-  const dual = usePanel((s) => s.dual);
-  const setDual = usePanel((s) => s.setDual);
-  const language = usePanel((s) => s.language);
-  const language2 = usePanel((s) => s.language2);
-  const runSearch = usePanel((s) => s.runSearch);
-
   const seriesShow = useTv((s) => s.show);
   const seriesPosition = useTv((s) => s.position);
-
-  /**
-   * The control that was missing before. `dual.enabled` also lives on the File tab's
-   * "Two subtitles at once" checkbox — they read and write the same store field, so
-   * checking either one flips both. But a control that exists only on a tab someone has no
-   * reason to visit while searching is not discoverable: you find it here, where you are
-   * looking for a second language, or you do not find it.
-   *
-   * Turning it on also re-runs an already-completed search when the two languages differ —
-   * the results on screen were fetched for one language, and would otherwise show an empty
-   * second column until the next search.
-   */
-  const onToggleDual = (enabled: boolean) => {
-    setDual({ enabled });
-    if (enabled && language2 !== language && find.status === 'done') {
-      void runSearch(find.page);
-    }
-  };
 
   // Once the Series browser has a show open on a specific episode, `pickEpisode` is
   // driving every search — the query box and language pickers below stop being anything
@@ -69,21 +42,6 @@ export function FindTab() {
       {/* Above the query box, because the point of it is to fill that box in. TV only —
           TVmaze has no films, so for a film the box below is still typed into directly. */}
       <SeriesBrowser />
-
-      <div className="flex items-center gap-2 rounded border border-white/10 bg-black/20 px-2.5 py-2">
-        <label className="flex flex-1 cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            checked={dual.enabled}
-            onChange={(e) => onToggleDual(e.target.checked)}
-            className="h-3.5 w-3.5 accent-sky-500"
-          />
-          <span className="text-[11px] font-medium text-white/85">
-            Search two languages at once
-          </span>
-        </label>
-        <InfoTooltip text="Results split into two columns, one per language, so you pick both from the same release in one pass." />
-      </div>
 
       <CustomSearch open={customOpen} onToggle={() => setCustomOpen(!customOpen)} />
 
@@ -104,9 +62,6 @@ function CustomSearch({ open, onToggle }: { open: boolean; onToggle: () => void 
   const setLanguage = usePanel((s) => s.setLanguage);
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
-  const dual = usePanel((s) => s.dual);
-  const language2 = usePanel((s) => s.language2);
-  const setLanguage2 = usePanel((s) => s.setLanguage2);
 
   const searching = find.status === 'searching';
 
@@ -139,25 +94,6 @@ function CustomSearch({ open, onToggle }: { open: boolean; onToggle: () => void 
             />
             <LanguagePicker selected={language} onChange={setLanguage} />
           </div>
-
-          {/* The second language sits below the search box rather than beside it: both
-              languages are fetched in the one search, but this is still "the second
-              track", not "another term to search for". */}
-          {dual.enabled && (
-            <div className="flex items-center gap-1.5 rounded border border-white/10 bg-black/20 px-2 py-1">
-              <span className="text-[10px] text-white/45">Second subtitle</span>
-              <div className="ml-auto">
-                <LanguagePicker selected={language2} onChange={setLanguage2} />
-              </div>
-            </div>
-          )}
-
-          {dual.enabled && language2 === language && (
-            <p className="text-[10px] leading-relaxed text-white/35">
-              Both are set to {languageName(language)}. Pick a different second language to
-              see two columns.
-            </p>
-          )}
 
           <Button
             size="sm"
@@ -266,45 +202,28 @@ function Results() {
 }
 
 /**
- * One release. Two very different shapes depending on whether two languages were actually
- * searched for — dual on but both languages left equal still collapses to one language
- * (see `searchLangParam` in the store), so this checks the same condition the store did.
- */
-function ReleaseRow({ release }: { release: Release }) {
-  const dual = usePanel((s) => s.dual);
-  const language = usePanel((s) => s.language);
-  const language2 = usePanel((s) => s.language2);
-
-  const twoLangs = dual.enabled && language2 !== language;
-  return twoLangs ? <DualReleaseRow release={release} /> : <SingleReleaseRow release={release} />;
-}
-
-function findTrack(tracks: readonly Track[], code: string): Track | null {
-  const wanted = code.toLowerCase();
-  return tracks.find((track) => track.code.toLowerCase() === wanted) ?? null;
-}
-
-/**
- * The common case: one language, so at most one track per release. Flat, not
- * expandable — there is nothing under a chevron here that this row does not already say.
+ * One release: its filename, how popular it is, and a button for its track in the chosen
+ * language. Flat, not expandable — there is nothing under a chevron this row does not say.
  *
  * The parser's own guarantee (at most one track per language per release — it
  * de-duplicates on the code) is what makes "the first track" safe to treat as "the track".
  */
-function SingleReleaseRow({ release }: { release: Release }) {
+function ReleaseRow({ release }: { release: Release }) {
   const find = usePanel((s) => s.find);
   const toggleRelease = usePanel((s) => s.toggleRelease);
+  const retryRelease = usePanel((s) => s.retryRelease);
   const loadTrack = usePanel((s) => s.loadTrack);
 
   const tracks = find.tracks[release.id];
   const busy = find.expanding.includes(release.id);
+  const failed = find.failed.includes(release.id);
 
   // Every release on a page arrives already expanded, so this is normally a no-op —
   // `toggleRelease` returns immediately once `tracks` is defined. It only does real work
   // for the rare release whose eager expansion failed in the worker (searchSubtitles
   // swallows a single release's failure with Promise.allSettled), where this is the retry.
   useEffect(() => {
-    if (tracks === undefined && !busy) void toggleRelease(release);
+    if (tracks === undefined && !busy && !failed) void toggleRelease(release);
     // Re-run only when the release itself changes — `toggleRelease` and `busy` are not
     // meant to restart this on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -314,7 +233,7 @@ function SingleReleaseRow({ release }: { release: Release }) {
   const loading = track !== null && find.loading === trackKey(track);
 
   return (
-    <li className="flex items-start gap-2 rounded border border-white/10 bg-black/20 px-2 py-1.5">
+    <li className="flex items-center gap-3 rounded border border-white/10 bg-black/20 px-2.5 py-2">
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[11px] text-white/85" title={release.title}>
           {release.title}
@@ -326,142 +245,28 @@ function SingleReleaseRow({ release }: { release: Release }) {
         </span>
       </span>
 
-      <span className="mt-px shrink-0">
-        {tracks === undefined ? (
-          <span className="text-[10px] text-white/30">Loading…</span>
-        ) : track ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void loadTrack(track)}
-            disabled={find.loading !== null}
-          >
-            {loading ? 'Loading…' : 'Use'}
-          </Button>
-        ) : (
-          <span className="text-[10px] text-white/25">Not available</span>
-        )}
-      </span>
-    </li>
-  );
-}
-
-/** Two languages searched for: a release worth expanding to see both columns side by side. */
-function DualReleaseRow({ release }: { release: Release }) {
-  const find = usePanel((s) => s.find);
-  const toggleRelease = usePanel((s) => s.toggleRelease);
-  const language = usePanel((s) => s.language);
-  const language2 = usePanel((s) => s.language2);
-
-  const tracks = find.tracks[release.id];
-  // Everything on a page arrives expanded, so a row starts open unless its fetch failed.
-  const [open, setOpen] = useState(tracks !== undefined);
-  const busy = find.expanding.includes(release.id);
-
-  const onToggle = (): void => {
-    setOpen(!open);
-    if (!open) void toggleRelease(release);
-  };
-
-  return (
-    <li className="rounded border border-white/10 bg-black/20">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-start gap-1.5 px-2 py-1.5 text-left hover:bg-white/5"
-      >
-        <span className="mt-px shrink-0 text-[9px] text-white/35">{open ? '▾' : '▸'}</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[11px] text-white/85" title={release.title}>
-            {release.title}
-          </span>
-          <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-white/35">
-            {release.recommended && <span className="text-amber-300">★</span>}
-            <span>{release.downloads.toLocaleString()} downloads</span>
-            {release.sourceLanguage && <span>· from {release.sourceLanguage}</span>}
-          </span>
-        </span>
-      </button>
-
-      {open && (
-        <div className="border-t border-white/5 px-2 py-1">
-          {busy && <p className="py-1 text-[10px] text-white/35">Loading…</p>}
-
-          {!busy && tracks !== undefined && tracks.length === 0 && (
-            <p className="py-1 text-[10px] text-white/35">Not available in either language.</p>
-          )}
-
-          {!busy && tracks !== undefined && tracks.length > 0 && (
-            // The visual split: one release, its track in each language, side by side.
-            // The API returns at most one track per language per release, so this is
-            // never more than two boxes.
-            <div className="grid grid-cols-2 gap-1.5">
-              <LanguageColumn
-                label="1st"
-                code={language}
-                track={findTrack(tracks, language)}
-                slot={0}
-              />
-              <LanguageColumn
-                label="2nd"
-                code={language2}
-                track={findTrack(tracks, language2)}
-                slot={1}
-              />
-            </div>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
-/** One release, one language: the track if the release has it, or a plain "not available". */
-function LanguageColumn({
-  label,
-  code,
-  track,
-  slot,
-}: {
-  label: string;
-  code: string;
-  track: Track | null;
-  slot: SlotId;
-}) {
-  const find = usePanel((s) => s.find);
-  const loadTrack = usePanel((s) => s.loadTrack);
-
-  const loading =
-    track !== null && find.loading === trackKey(track) && find.loadingSlot === slot;
-
-  return (
-    <div className="rounded border border-white/5 bg-black/20 px-1.5 py-1">
-      <div
-        className="truncate text-[9px] uppercase tracking-wide text-white/35"
-        title={languageName(code)}
-      >
-        {label} · {languageName(code)}
-      </div>
-
-      {track ? (
-        <>
-          <div className="mt-0.5 truncate text-[10px] text-white/70" title={track.name}>
-            {track.name}
-          </div>
-          <div className="mt-1">
+      <span className="shrink-0">
+        {tracks !== undefined ? (
+          track ? (
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => void loadTrack(track, slot)}
+              onClick={() => void loadTrack(track)}
               disabled={find.loading !== null}
             >
-              {loading ? 'Loading…' : `Load as ${label.toLowerCase()}`}
+              {loading ? 'Loading…' : 'Use'}
             </Button>
-          </div>
-        </>
-      ) : (
-        <p className="mt-0.5 text-[10px] text-white/25">Not available</p>
-      )}
-    </div>
+          ) : (
+            <span className="text-[10px] text-white/25">Not available</span>
+          )
+        ) : failed ? (
+          <Button size="sm" variant="ghost" onClick={() => void retryRelease(release)}>
+            Retry
+          </Button>
+        ) : (
+          <span className="text-[10px] text-white/30">Loading…</span>
+        )}
+      </span>
+    </li>
   );
 }

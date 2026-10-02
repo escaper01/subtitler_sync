@@ -56,52 +56,6 @@ export interface SyncState {
 
 export const IDENTITY_SYNC: SyncState = { scale: 1, offset: 0, anchors: [null, null] };
 
-/* ---------------------------------------------------------------------- slots */
-
-/**
- * Which of the two subtitle tracks something refers to. `0` is the primary.
- *
- * Two, not N. Two is what a person can read at once, and a fixed pair keeps the layout a
- * stack rather than a layout engine, and the state a tuple rather than a list with an
- * empty case.
- */
-export type SlotId = 0 | 1;
-
-/**
- * One of the two tracks, with its own timing.
- *
- * **The sync state is per slot and that is the point.** Two tracks for the same film are
- * almost never timed against the same release, so a shared transform would mean fixing one
- * breaks the other. Every existing sync tool — the one-point anchor, the two-point drift
- * fit, the FPS snap — applies to a slot unchanged, because `lib/sync.ts` is pure and knows
- * nothing about which track it is working on.
- */
-export interface TrackSlot {
-  track: SubtitleTrack | null;
-  sync: SyncState;
-  /** Per-slot hide, independent of the panel's global "hide subtitles". */
-  visible: boolean;
-}
-
-/** Where the two blocks sit relative to each other. */
-export interface DualLayout {
-  /** Off by default: the single-track case must cost nothing. */
-  enabled: boolean;
-  /** Vertical gap between the blocks, as a percentage of overlay height. */
-  gapPct: number;
-  /**
-   * Which block sits above the other. Primary at the bottom by default, so it keeps the
-   * position a single track would have had and does not move when the secondary appears.
-   */
-  order: 'secondary-above' | 'secondary-below';
-}
-
-export const DEFAULT_DUAL_LAYOUT: DualLayout = {
-  enabled: false,
-  gapPct: 1.2,
-  order: 'secondary-above',
-};
-
 /* ---------------------------------------------------------------------- style */
 
 export type AnchorTo = 'picture' | 'player';

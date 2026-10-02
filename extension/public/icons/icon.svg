@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- Source for tools/make-icons.mjs. Editing this file alone changes nothing:
-       adjust the script (or replace the PNGs) to change the shipped icons. -->
-  <rect width="128" height="128" rx="28.2" fill="#0b1220"/>
-  <rect x="2.5" y="2.5" width="123" height="123" rx="25.7" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="5"/>
-  <rect x="33.3" y="58.9" width="61.4" height="15.4" rx="7.7" fill="#38bdf8"/>
-  <rect x="17.9" y="84.5" width="92.2" height="15.4" rx="7.7" fill="#38bdf8"/>
-</svg>

@@ -10,7 +10,6 @@ import { StyleTab } from '@/panel/components/StyleTab';
 import { SyncTab } from '@/panel/components/SyncTab';
 import { SitesTab } from '@/panel/components/SitesTab';
 import { PanelBanner } from '@/panel/components/PanelBanner';
-import { SlotSelector } from '@/panel/components/SlotSelector';
 
 /** How often the panel samples playback position. Enough for a smooth highlight. */
 const TICK_MS = 120;
@@ -111,7 +110,7 @@ function Panel() {
     <div
       ref={ref}
       style={{ left: prefs.x, top: prefs.y, pointerEvents: 'auto' }}
-      className="absolute flex max-h-[85%] w-[340px] flex-col overflow-hidden rounded-lg border border-white/15 bg-neutral-900/95 font-sans text-white shadow-2xl backdrop-blur-sm"
+      className="@container absolute flex max-h-[92%] w-[40%] min-w-[320px] max-w-full flex-col overflow-hidden rounded-lg border border-white/15 bg-neutral-900/95 font-sans text-white shadow-2xl backdrop-blur-sm"
     >
       <header
         onPointerDown={onPointerDown}
@@ -151,8 +150,6 @@ function Panel() {
           </button>
         ))}
       </nav>
-
-      <SlotSelector />
 
       <div className="flex-1 overflow-y-auto p-2.5">
         <PanelBanner />

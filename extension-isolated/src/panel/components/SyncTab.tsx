@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Cue } from '@/types';
-import { selectSlotId, selectSync, selectTrack, usePanel } from '@/panel/store';
+import { selectSync, selectTrack, usePanel } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
 import { describeSync, snapCandidate, toCueTime, toVideoTime } from '@/lib/sync';
 import { Button, TextInput, clock } from '@/panel/components/ui';
@@ -14,8 +14,6 @@ export function SyncTab() {
   const track = usePanel(selectTrack);
   const sync = usePanel(selectSync);
   const time = usePanel((s) => s.time);
-  const dual = usePanel((s) => s.dual);
-  const slotId = usePanel(selectSlotId);
 
   const lookup = useMemo(() => (track ? new CueLookup(track.cues) : null), [track]);
   const activeIndex = useMemo(() => {
@@ -26,29 +24,13 @@ export function SyncTab() {
   if (!track) {
     return (
       <p className="py-6 text-center text-[11px] text-white/40">
-        {dual.enabled
-          ? `Nothing loaded in the ${slotId === 0 ? 'primary' : 'secondary'} yet — load a file into it from the File tab.`
-          : 'Load a subtitle file first — then click the line you just heard and everything lines up.'}
+        Load a subtitle file first — then click the line you just heard and everything lines up.
       </p>
     );
   }
 
   return (
     <div className="space-y-2.5">
-      {/* Which track these controls move. The panel-wide selector says it too, but this
-          list is where a mis-click actually costs something — an offset applied to the
-          wrong track looks like the tool is broken. */}
-      {dual.enabled && (
-        <div className="flex items-center gap-1.5 rounded border border-sky-400/25 bg-sky-500/[0.07] px-2 py-1">
-          <span className="text-[10px] text-white/50">Adjusting the</span>
-          <span className="text-[10px] font-medium text-sky-200">
-            {slotId === 0 ? 'primary' : 'secondary'}
-          </span>
-          <span className="ml-auto max-w-40 truncate text-[10px] text-white/35" title={track.name}>
-            {track.name}
-          </span>
-        </div>
-      )}
       <OffsetBar />
       <CueList cues={track.cues} activeIndex={activeIndex} />
       <DriftFix />

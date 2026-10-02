@@ -7,14 +7,18 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:firefox": "vite build --mode firefox",
+    "dev:firefox": "vite --mode firefox",
     "icons": "node tools/make-icons.mjs",
     "key": "node tools/make-key.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "node tools/verify-build.mjs",
+    "package:firefox": "npm run build:firefox && web-ext build --source-dir dist-firefox --artifacts-dir dist-firefox-xpi --overwrite-dest",
+    "verify:firefox": "node tools/verify-build.mjs --firefox",
     "config:publish": "node tools/publish-config.mjs",
-    "check": "tsc --noEmit && vitest run && vite build && node tools/verify-build.mjs",
+    "check": "tsc --noEmit && vitest run && vite build && node tools/verify-build.mjs && vite build --mode firefox && node tools/verify-build.mjs --firefox",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -34,6 +38,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
+    "web-ext": "^9.0.0",
     "vitest": "^4.1.10"
   }
 }

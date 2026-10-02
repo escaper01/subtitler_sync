@@ -19,7 +19,9 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../dist');
+// `node tools/verify-build.mjs --firefox` checks dist-firefox/ instead of dist/.
+const FIREFOX = process.argv.includes('--firefox');
+const DIST = resolve(dirname(fileURLToPath(import.meta.url)), FIREFOX ? '../dist-firefox' : '../dist');
 
 const problems = [];
 
@@ -71,7 +73,12 @@ function expectEntry(label, loaderPath, expectedEntry) {
 
 const manifest = JSON.parse(read('manifest.json') ?? '{}');
 
-expectEntry('service worker', manifest.background?.service_worker ?? '', 'service-worker.ts');
+// Chrome declares a service worker; Firefox an event page, as `scripts`.
+expectEntry(
+  FIREFOX ? 'event page' : 'service worker',
+  (FIREFOX ? manifest.background?.scripts?.[0] : manifest.background?.service_worker) ?? '',
+  'service-worker.ts',
+);
 
 const contentScript = manifest.content_scripts?.[0]?.js?.[0];
 if (!contentScript) {
@@ -83,7 +90,18 @@ if (!contentScript) {
 // The offscreen document is opened by URL from the worker rather than named in the
 // manifest, so nothing else notices when it fails to build: parsing simply throws
 // "no such page" at the first search. The path must match background/offscreen.ts.
-read('src/offscreen/offscreen.html');
+// Firefox has none — it parses in its background page — and must not declare the permission.
+if (FIREFOX) {
+  if (manifest.permissions?.includes('offscreen')) {
+    problems.push('manifest asks for "offscreen", which Firefox does not know');
+  }
+  if (!manifest.browser_specific_settings?.gecko?.id) {
+    problems.push('manifest has no browser_specific_settings.gecko.id');
+  }
+  if (manifest.key) problems.push('manifest carries a Chrome "key"');
+} else {
+  read('src/offscreen/offscreen.html');
+}
 
 // Every icon the manifest promises has to actually be there, or Chrome shows a blank square
 // and says nothing about why.

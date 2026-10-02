@@ -48,6 +48,14 @@ export function resolveUpstream(base: string, path: string): URL {
   return url;
 }
 
+const bareHost = (host: string): string => host.toLowerCase().replace(/^www\./, '');
+
+/** Same scheme and the same host, give or take a leading `www.`. */
+export function sameSite(base: string, url: URL): boolean {
+  const site = new URL(base);
+  return url.protocol === site.protocol && bareHost(url.hostname) === bareHost(site.hostname);
+}
+
 /** GET a subtitlecat URL as text. Throws `UpstreamError` for anything that isn't a 200. */
 export async function fetchText(base: string, url: URL): Promise<string> {
   let response: Response;
@@ -76,8 +84,11 @@ export async function fetchText(base: string, url: URL): Promise<string> {
   }
 
   // A redirect that leaves the site would mean our resolved URL was not the final one.
-  if (new URL(response.url).origin !== base) {
-    throw new UpstreamError('subtitlecat redirected off-site.', 'upstream');
+  // `subtitlecat.com` ↔ `www.subtitlecat.com` is the same site, and the site does bounce
+  // between the two, so that alone is not off-site.
+  const finalUrl = new URL(response.url);
+  if (!sameSite(base, finalUrl)) {
+    throw new UpstreamError(`subtitlecat redirected off-site (to ${finalUrl.host}).`, 'upstream');
   }
 
   const declared = Number(response.headers.get('content-length') ?? 0);

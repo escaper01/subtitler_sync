@@ -1,4 +1,5 @@
 import type { FromOffscreen, ToOffscreen } from '@/types';
+import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
 
 /**
  * Driving the offscreen document from the worker.
@@ -53,8 +54,27 @@ function scheduleClose(): void {
   }, CLOSE_AFTER_MS);
 }
 
+/**
+ * Firefox has no service worker and no offscreen API: its background is an event page,
+ * which *has* a `DOMParser`, so the parse happens right here. Detected by the capability
+ * rather than by build flag — the question being asked is "is there a DOM?".
+ */
+function parseInline<T>(message: ToOffscreen): T {
+  const doc = new DOMParser().parseFromString(message.html, 'text/html');
+  switch (message.kind) {
+    case 'parse:search':
+      return parseSearch(doc, message.selectors) as T;
+    case 'parse:detail':
+      return parseDetail(doc, message.id, message.selectors) as T;
+  }
+}
+
 /** Hand HTML to the offscreen document and get JSON back. Throws on any failure. */
 export async function parseOffscreen<T>(message: ToOffscreen): Promise<T> {
+  // A selector that does not parse throws here, as it would have in the offscreen
+  // document; the caller in lib/api.ts retries with the bundled selectors either way.
+  if (typeof DOMParser !== 'undefined') return parseInline<T>(message);
+
   await ensure();
   scheduleClose();
 

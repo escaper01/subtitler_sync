@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-firefox/
+dist-firefox-xpi/
 *.local
 .DS_Store
 .vite/

@@ -1,4 +1,4 @@
-import { selectSlotId, selectStyle, usePanel } from '@/panel/store';
+import { selectStyle, usePanel } from '@/panel/store';
 import { STYLE_LIMITS, STYLE_PRESETS } from '@/lib/style';
 import { Button, ColorField, Select, Slider, Switch } from '@/panel/components/ui';
 
@@ -15,13 +15,6 @@ export function StyleTab() {
   const style = usePanel(selectStyle);
   const setStyle = usePanel((s) => s.setStyle);
   const replaceStyle = usePanel((s) => s.replaceStyle);
-  const resetSecondaryStyle = usePanel((s) => s.resetSecondaryStyle);
-
-  // Which block is being edited. The secondary has no position of its own — where the
-  // stack sits is the primary's business — so those controls are swapped for the two that
-  // describe the *relationship* between the blocks.
-  const slotId = usePanel(selectSlotId);
-  const secondary = slotId === 1;
 
   const limit = (key: keyof typeof STYLE_LIMITS) => STYLE_LIMITS[key];
 
@@ -40,22 +33,13 @@ export function StyleTab() {
               {preset.name}
             </Button>
           ))}
-          {secondary && (
-            <Button
-              size="sm"
-              title="Copy the primary's look, one size down and slightly dimmer"
-              onClick={resetSecondaryStyle}
-            >
-              Match primary
-            </Button>
-          )}
         </div>
       </div>
 
       <Preview />
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-        <div className="col-span-2">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-2 @lg:grid-cols-3">
+        <div className="col-span-2 @lg:col-span-3">
           <Select
             label="Font"
             value={style.fontFamily}
@@ -120,30 +104,24 @@ export function StyleTab() {
           onChange={(value) => setStyle({ bgAlpha: value })}
         />
 
-        {secondary ? (
-          <DualLayoutControls />
-        ) : (
-          <>
-            <Slider
-              label="Distance from bottom"
-              value={style.bottomPct}
-              min={limit('bottomPct')[0]}
-              max={limit('bottomPct')[1]}
-              step={0.5}
-              unit="%"
-              onChange={(value) => setStyle({ bottomPct: value })}
-            />
-            <Slider
-              label="Max width"
-              value={style.maxWidthPct}
-              min={limit('maxWidthPct')[0]}
-              max={limit('maxWidthPct')[1]}
-              step={1}
-              unit="%"
-              onChange={(value) => setStyle({ maxWidthPct: value })}
-            />
-          </>
-        )}
+        <Slider
+          label="Distance from bottom"
+          value={style.bottomPct}
+          min={limit('bottomPct')[0]}
+          max={limit('bottomPct')[1]}
+          step={0.5}
+          unit="%"
+          onChange={(value) => setStyle({ bottomPct: value })}
+        />
+        <Slider
+          label="Max width"
+          value={style.maxWidthPct}
+          min={limit('maxWidthPct')[0]}
+          max={limit('maxWidthPct')[1]}
+          step={1}
+          unit="%"
+          onChange={(value) => setStyle({ maxWidthPct: value })}
+        />
 
         <Slider
           label="Line height"
@@ -162,31 +140,27 @@ export function StyleTab() {
           onChange={(value) => setStyle({ letterSpacing: value })}
         />
 
-        {!secondary && (
-          <>
-            <Select
-              label="Alignment"
-              value={style.textAlign}
-              options={[
-                { value: 'center', label: 'Centre' },
-                { value: 'left', label: 'Left' },
-                { value: 'right', label: 'Right' },
-              ]}
-              onChange={(value) => setStyle({ textAlign: value })}
-            />
-            <Select
-              label="Position against"
-              value={style.anchorTo}
-              options={[
-                { value: 'picture', label: 'Picture' },
-                { value: 'player', label: 'Player box' },
-              ]}
-              onChange={(value) => setStyle({ anchorTo: value })}
-            />
-          </>
-        )}
+        <Select
+          label="Alignment"
+          value={style.textAlign}
+          options={[
+            { value: 'center', label: 'Centre' },
+            { value: 'left', label: 'Left' },
+            { value: 'right', label: 'Right' },
+          ]}
+          onChange={(value) => setStyle({ textAlign: value })}
+        />
+        <Select
+          label="Position against"
+          value={style.anchorTo}
+          options={[
+            { value: 'picture', label: 'Picture' },
+            { value: 'player', label: 'Player box' },
+          ]}
+          onChange={(value) => setStyle({ anchorTo: value })}
+        />
 
-        <div className="col-span-2 space-y-0.5 border-t border-white/10 pt-2">
+        <div className="col-span-2 space-y-0.5 border-t @lg:col-span-3 border-white/10 pt-2">
           <Switch
             label="Drop shadow"
             checked={style.shadow}
@@ -201,45 +175,11 @@ export function StyleTab() {
       </div>
 
       <p className="text-[10px] leading-relaxed text-white/35">
-        {secondary
-          ? 'Where the pair sits — distance from the bottom, width and alignment — is set on the primary. The two blocks move together.'
-          : `Size and position are percentages of the video's height, so they hold their proportions in fullscreen. "Position against picture" keeps text inside the image rather than drifting into the black bars.`}
+        Size and position are percentages of the video's height, so they hold their proportions
+        in fullscreen. "Position against picture" keeps text inside the image rather than
+        drifting into the black bars.
       </p>
     </div>
-  );
-}
-
-/**
- * The two controls that describe the *pair* rather than either block.
- *
- * They live under the secondary because that is where somebody goes looking for "move this
- * one up a bit", even though both values are stored on the layout, not on a style.
- */
-function DualLayoutControls() {
-  const dual = usePanel((s) => s.dual);
-  const setDual = usePanel((s) => s.setDual);
-
-  return (
-    <>
-      <Slider
-        label="Gap"
-        value={dual.gapPct}
-        min={0}
-        max={8}
-        step={0.1}
-        unit="%"
-        onChange={(value) => setDual({ gapPct: value })}
-      />
-      <Select
-        label="This track sits"
-        value={dual.order}
-        options={[
-          { value: 'secondary-above', label: 'Above' },
-          { value: 'secondary-below', label: 'Below' },
-        ]}
-        onChange={(value) => setDual({ order: value })}
-      />
-    </>
   );
 }
 
