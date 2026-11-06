@@ -6,7 +6,7 @@ Chrome, Edge, Brave and Firefox (128+). It needs **no server and no account**, a
 
 ![Subtitles over a video with the panel open](docs/screenshots/overview.png)
 
-- [Install](#install)
+- [Install from a release](#install-from-a-release-no-build-needed) · [Build it yourself](#build-it-yourself)
 - [Export the extension](#export-the-extension) (Chrome, Brave, Firefox, Firefox Nightly on Android)
 - [Allowing a site](#allowing-a-site)
 - [The panel](#the-panel)
@@ -17,7 +17,41 @@ Chrome, Edge, Brave and Firefox (128+). It needs **no server and no account**, a
 
 ---
 
-## Install
+## Install from a release (no build needed)
+
+Download the file for your browser from the
+[Releases page](https://github.com/escaper01/subtitler_sync/releases):
+
+| File | For |
+|---|---|
+| `subtitler-chrome-<version>.zip` | Chrome, Edge, Brave |
+| `subtitler-firefox-<version>.xpi` | Firefox, Firefox Nightly (desktop and Android) |
+
+**Chrome / Edge / Brave**
+
+1. Unzip the file into a folder you will keep (the browser reads the extension from there, so do
+   not delete it).
+2. Open `chrome://extensions` (Brave: `brave://extensions`, Edge: `edge://extensions`).
+3. Turn on **Developer mode** (top right).
+4. Click **Load unpacked** and choose the unzipped folder, the one that contains `manifest.json`.
+5. Pin the extension from the puzzle-piece menu if you want its icon on the toolbar.
+
+**Firefox**
+
+Release Firefox only runs add-ons signed by Mozilla, so an unsigned `.xpi` needs one of these:
+
+- **Quick test:** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** → pick the
+  `.xpi` (or its unzipped `manifest.json`). It is removed when Firefox restarts.
+- **Permanent:** use Firefox Developer Edition, Nightly or ESR, open `about:config`, set
+  `xpinstall.signatures.required` to `false`, then drag the `.xpi` into the window and confirm.
+
+**Firefox Nightly on Android:** see [the steps below](#firefox-nightly-on-android).
+
+After installing, allow the site you watch: see [Allowing a site](#allowing-a-site).
+
+---
+
+## Build it yourself
 
 Build it once (Node 20+):
 
@@ -45,8 +79,9 @@ They share one build, `dist`.
 
 - **Use it yourself:** `chrome://extensions` (Brave: `brave://extensions`) → **Developer mode** →
   **Load unpacked** → pick `dist`.
-- **Send it to someone as a file:** zip the *contents* of `dist` (so `manifest.json` sits at the top
-  of the zip). They unzip it and use **Load unpacked** on the folder.
+- **Send it to someone as a file:** `npm run package:chrome` writes
+  `release/subtitler-chrome-<version>.zip` with `manifest.json` at the top. They unzip it and use
+  **Load unpacked** on the folder.
 - **Make a `.crx`:** on the extensions page choose **Pack extension**, set the root to `dist` and,
   to keep the same extension id, the private key to `key.pem`. Chrome and Brave
   only install `.crx` files from outside their store if the user turns developer mode on and drags
@@ -60,9 +95,8 @@ They share one build, `dist`.
 npm run package:firefox
 ```
 
-This builds `dist-firefox/` and writes
-`dist-firefox-xpi/subtitle_synchronizer_isolated_-0.1.0.zip`. A Firefox add-on
-is just that zip with the extension `.xpi`, so **rename it to `.xpi`** to install it.
+This builds `dist-firefox/` and writes `release/subtitler-firefox-<version>.xpi`, ready to install
+as described below.
 
 - **Temporary (testing):** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
   pick `dist-firefox/manifest.json`. It disappears when Firefox restarts.
@@ -80,7 +114,7 @@ is just that zip with the extension `.xpi`, so **rename it to `.xpi`** to instal
 Needs Firefox Nightly 142 or newer. Stable Firefox for Android only installs add-ons from Mozilla's
 own list, which is why Nightly is used here.
 
-1. Build the file on your computer with `npm run package:firefox` and rename the zip to `.xpi`.
+1. Get the `.xpi` from the Releases page, or build it with `npm run package:firefox`.
 2. Copy the `.xpi` to the phone (USB, cloud drive, or send it to yourself).
 3. Install unsigned add-ons by turning off the signature check: open **`about:config`** in
    Firefox Nightly, search for **`xpinstall.signatures.required`** and set it to **`false`**.
@@ -296,3 +330,16 @@ are the fixtures for syncing and drift.
 Privacy: the extension makes requests only to `subtitlecat.com`, `api.tvmaze.com` and
 `raw.githubusercontent.com`, always from its background worker. It sends no account, identifier or
 credential to anyone.
+
+## Publishing a release
+
+Bump `version` in `package.json`, run `npm run check`, then build both files and attach them to a
+GitHub release:
+
+```bash
+npm run package
+gh release create v0.1.0 release/subtitler-chrome-0.1.0.zip release/subtitler-firefox-0.1.0.xpi --title "v0.1.0" --notes "What changed"
+```
+
+`npm run package` writes both files to `release/` (git-ignored). The same files can be dragged onto
+the release page in the browser instead of using `gh`.
