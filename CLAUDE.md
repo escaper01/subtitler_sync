@@ -76,6 +76,17 @@ pick `dist-firefox/manifest.json`. It is the same source — the differences are
 - **Not tested on a real Firefox from CI** — only built and structurally verified. Run the
   harness (`npm run dev:firefox`, `test/local.html`) in Firefox before shipping.
 
+#### Installing unsigned builds for development
+
+To install `.xpi` files that haven't been signed by Mozilla:
+
+1. Open `about:config` in Firefox
+2. Search for `xpinstall.signatures.required`
+3. Set it to `false`
+
+Then you can install unsigned `.xpi` files normally. For permanent distribution, submit to
+[Mozilla Add-ons](https://addons.mozilla.org) for signing.
+
 ---
 
 ### The one thing to understand before touching this code
