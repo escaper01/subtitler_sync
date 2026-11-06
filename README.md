@@ -22,34 +22,33 @@ Chrome, Edge, Brave and Firefox (128+). It needs **no server and no account**, a
 Build it once (Node 20+):
 
 ```bash
-cd extension-isolated
 npm install
 npm run check
 ```
 
 | Browser | How to load it |
 |---|---|
-| **Chrome / Edge / Brave** | Open `chrome://extensions` (Brave: `brave://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `extension-isolated/dist`. |
-| **Firefox** | Open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on** and choose `extension-isolated/dist-firefox/manifest.json`. It is removed when Firefox restarts. |
+| **Chrome / Edge / Brave** | Open `chrome://extensions` (Brave: `brave://extensions`), turn on **Developer mode**, click **Load unpacked** and choose `dist`. |
+| **Firefox** | Open `about:debugging#/runtime/this-firefox`, click **Load Temporary Add-on** and choose `dist-firefox/manifest.json`. It is removed when Firefox restarts. |
 
 After rebuilding, press the reload icon on the extension's card, then reload the page you were
-watching. See [`SETUP.md`](./SETUP.md) for publishing and the optional `web/` app.
+watching. Publishing notes are in [`CLAUDE.md`](./CLAUDE.md).
 
 ## Export the extension
 
-Build first (`cd extension-isolated && npm install && npm run check`). That produces the Chrome
+Build first (`npm install && npm run check`). That produces the Chrome
 build in `dist/` and the Firefox build in `dist-firefox/`. Neither folder is committed.
 
 ### Chrome, Edge and Brave
 
-They share one build, `extension-isolated/dist`.
+They share one build, `dist`.
 
 - **Use it yourself:** `chrome://extensions` (Brave: `brave://extensions`) → **Developer mode** →
   **Load unpacked** → pick `dist`.
 - **Send it to someone as a file:** zip the *contents* of `dist` (so `manifest.json` sits at the top
   of the zip). They unzip it and use **Load unpacked** on the folder.
 - **Make a `.crx`:** on the extensions page choose **Pack extension**, set the root to `dist` and,
-  to keep the same extension id, the private key to `extension-isolated/key.pem`. Chrome and Brave
+  to keep the same extension id, the private key to `key.pem`. Chrome and Brave
   only install `.crx` files from outside their store if the user turns developer mode on and drags
   the file in, so the unpacked folder is usually easier.
 - **Chrome Web Store:** upload the zip of `dist`. The key in `key.pem` pins the extension id, so
@@ -58,12 +57,11 @@ They share one build, `extension-isolated/dist`.
 ### Firefox (desktop)
 
 ```bash
-cd extension-isolated
 npm run package:firefox
 ```
 
 This builds `dist-firefox/` and writes
-`extension-isolated/dist-firefox-xpi/subtitle_synchronizer_isolated_-0.1.0.zip`. A Firefox add-on
+`dist-firefox-xpi/subtitle_synchronizer_isolated_-0.1.0.zip`. A Firefox add-on
 is just that zip with the extension `.xpi`, so **rename it to `.xpi`** to install it.
 
 - **Temporary (testing):** `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
@@ -284,15 +282,14 @@ They work while the panel is open and you are not typing in a box.
 - **Panel disappeared after reloading the extension?** Reload the page under test as well; old
   scripts do not survive an extension reload.
 - **Search finds nothing?** The subtitle site may have changed its layout. See
-  [`extension-isolated/remote/README.md`](./extension-isolated/remote/README.md).
+  [`remote/README.md`](./remote/README.md).
 - **Spaces do not type into a box?** They do; the panel handles players that grab the space key.
 - **Subtitle looks fine but the speech is slightly off?** Click the line you hear (Lines), or nudge
   with Timing. If it gets worse towards the end, use Drift.
 
 ## For developers
 
-The architecture, constraints and gotchas are in [`CLAUDE.md`](./CLAUDE.md); setup and publishing
-are in [`SETUP.md`](./SETUP.md). The offline test page is `extension-isolated/test/local.html`
+The architecture, constraints and gotchas are in [`CLAUDE.md`](./CLAUDE.md); the offline test page is `test/local.html`
 (run `npm run dev` and open `/test/local.html`); `sample.srt` and `sample-drift.srt` next to it
 are the fixtures for syncing and drift.
 

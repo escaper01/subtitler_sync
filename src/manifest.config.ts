@@ -27,7 +27,7 @@ export default defineManifest(({ mode }) => {
     description:
       'Add subtitles to any video: load your own SRT/VTT or find one online, then fix the timing with a click.',
 
-    // Pins the extension's identity. This is the PUBLIC half of `extension-isolated/key.pem`
+    // Pins the extension's identity. This is the PUBLIC half of `key.pem`
     // — its own key, distinct from the other two builds', which is what lets all three be
     // installed at once. Regenerate both with `npm run key`.
     //
