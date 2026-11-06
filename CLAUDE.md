@@ -212,6 +212,26 @@ Avoid `update code`, `fixes`, `wip`, and anything that restates the file name. I
 
 ---
 
+### Publishing a release
+
+Bump `version` in `package.json` (the manifest reads it), run `npm run check`, then:
+
+```bash
+npm run package        # writes release/subtitler-chrome-<v>.zip and subtitler-firefox-<v>.xpi
+gh release create v<v> release/subtitler-chrome-<v>.zip release/subtitler-firefox-<v>.xpi --title "v<v>" --notes "What changed"
+```
+
+`release/` is git-ignored. The same files can be dragged onto the release page instead of using
+`gh`. The Firefox `.xpi` is unsigned; users of release Firefox need Mozilla to sign it (see
+README, *Export the extension*).
+
+### Keyboard shortcuts
+
+Active only while the panel is open and focus is not in a text box (`useHotkeys` in
+`panel/App.tsx`): `S` sync to the line being spoken, `G` / `H` nudge 0.1 s earlier / later,
+`Shift+S` collapse the panel. `Alt+Shift+S` (manifest command `toggle-panel`, remappable at
+`chrome://extensions/shortcuts`) shows or hides it from anywhere.
+
 **Loading it:** `chrome://extensions` → enable Developer mode → *Load unpacked* → select `dist/`.
 After a rebuild, hit the reload icon on the extension card, then reload the page under test —
 old content scripts do not survive an extension reload (see gotchas).

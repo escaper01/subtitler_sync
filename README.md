@@ -2,7 +2,7 @@
 
 A browser extension that puts your own subtitles on top of any HTML5 video, with a click-to-sync
 tool for fixing mistimed tracks, built-in subtitle search, and a TV-series browser. It works in
-Chrome, Edge, Brave and Firefox (128+). It needs **no server and no account**, and it is free.
+Chrome, Edge, Brave and Firefox (140+). It needs **no server and no account**, and it is free.
 
 ![Subtitles over a video with the panel open](docs/screenshots/overview.png)
 
@@ -11,9 +11,6 @@ Chrome, Edge, Brave and Firefox (128+). It needs **no server and no account**, a
 - [Allowing a site](#allowing-a-site)
 - [The panel](#the-panel)
 - [File tab](#file-tab) · [Find tab](#find-tab) · [Sync tab](#sync-tab) · [Style tab](#style-tab) · [Sites tab](#sites-tab)
-- [Keyboard shortcuts](#keyboard-shortcuts)
-- [Tips and troubleshooting](#tips-and-troubleshooting)
-- [For developers](#for-developers)
 
 ---
 
@@ -299,51 +296,3 @@ The top box shows the site you are on, with a checkbox to turn the extension on 
 is the list of every allowed site: remove one with **×**, or type a new address in the box at the
 bottom and press **Add**. Subdomains are included, and so is whatever the page embeds, so allow the
 site you visit, not the player it loads. This is the same list as the toolbar popup.
-
----
-
-## Keyboard shortcuts
-
-They work while the panel is open and you are not typing in a box.
-
-| Key | Action |
-|---|---|
-| `Alt+Shift+S` | Show or hide the panel (change it at `chrome://extensions/shortcuts`) |
-| `S` | Sync to the line being spoken right now |
-| `G` / `H` | Nudge the subtitles 0.1 s earlier / later |
-| `Shift+S` | Collapse the panel |
-
-## Tips and troubleshooting
-
-- **No panel at all?** The site is probably not allowed. Click the toolbar icon, and allow it.
-  Also make sure the video is longer than 90 seconds and has started playing.
-- **Panel disappeared after reloading the extension?** Reload the page under test as well; old
-  scripts do not survive an extension reload.
-- **Search finds nothing?** Look at the dot at the bottom of the Find tab. Red means the subtitle
-  site is not answering or has changed its layout, so it is not your search. Developers: run
-  `LIVE=1 npm test` to see which.
-- **Spaces do not type into a box?** They do; the panel handles players that grab the space key.
-- **Subtitle looks fine but the speech is slightly off?** Click the line you hear (Lines), or nudge
-  with Timing. If it gets worse towards the end, use Drift.
-
-## For developers
-
-The architecture, constraints and gotchas are in [`CLAUDE.md`](./CLAUDE.md); the offline test page is `test/local.html`
-(run `npm run dev` and open `/test/local.html`); `sample.srt` and `sample-drift.srt` next to it
-are the fixtures for syncing and drift.
-
-Privacy: the extension makes requests only to its subtitle source and `api.tvmaze.com`, always
-from its background worker. It sends no account, identifier or credential to anyone.
-
-## Publishing a release
-
-Bump `version` in `package.json`, run `npm run check`, then build both files and attach them to a
-GitHub release:
-
-```bash
-npm run package
-gh release create v0.1.0 release/subtitler-chrome-0.1.0.zip release/subtitler-firefox-0.1.0.xpi --title "v0.1.0" --notes "What changed"
-```
-
-`npm run package` writes both files to `release/` (git-ignored). The same files can be dragged onto
-the release page in the browser instead of using `gh`.
