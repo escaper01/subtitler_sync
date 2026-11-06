@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Cue } from '@/types';
-import { selectSync, selectTrack, usePanel } from '@/panel/store';
+import { selectSync, selectTrack, usePanel, type SyncSection } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
-import { describeSync, snapCandidate, toCueTime, toVideoTime } from '@/lib/sync';
+import { describeSync, toCueTime, toVideoTime } from '@/lib/sync';
 import { Button, TextInput, clock } from '@/panel/components/ui';
 
-const ROW_HEIGHT = 46;
+/** One line per row, so the height is exact and there is no dead space under short cues. */
+const ROW_HEIGHT = 24;
 const OVERSCAN = 4;
 /** How long to leave auto-scroll off after the user scrolls the list themselves. */
 const MANUAL_SCROLL_GRACE_MS = 4000;
@@ -14,6 +15,7 @@ export function SyncTab() {
   const track = usePanel(selectTrack);
   const sync = usePanel(selectSync);
   const time = usePanel((s) => s.time);
+  const sections = usePanel((s) => s.syncSections);
 
   const lookup = useMemo(() => (track ? new CueLookup(track.cues) : null), [track]);
   const activeIndex = useMemo(() => {
@@ -30,12 +32,184 @@ export function SyncTab() {
   }
 
   return (
-    <div className="space-y-2.5">
-      <OffsetBar />
-      <CueList cues={track.cues} activeIndex={activeIndex} />
-      <DriftFix />
+    <div className="space-y-2">
+      <PlayerBar />
+      {sections.timing && <OffsetBar />}
+      {sections.lines && <CueList cues={track.cues} activeIndex={activeIndex} />}
+      {sections.drift && <DriftFix />}
     </div>
   );
+}
+
+/* ----------------------------------------------------------------- player bar */
+
+const SECTION_LABELS: { id: SyncSection; label: string; title: string }[] = [
+  { id: 'timing', label: 'Timing', title: 'Show or hide the offset buttons' },
+  { id: 'lines', label: 'Lines', title: 'Show or hide the subtitle line list' },
+  { id: 'drift', label: 'Drift', title: 'Show or hide the drift fix' },
+];
+
+/**
+ * Play/pause and skip, so the sync tool can be used without reaching for the player's own
+ * controls — plus the toggles for the optional sections below, which share the row because
+ * a hidden section should cost no height at all.
+ */
+function PlayerBar() {
+  const bridge = usePanel((s) => s.bridge);
+  const step = usePanel((s) => s.seekStep);
+  const setStep = usePanel((s) => s.setSeekStep);
+  const sections = usePanel((s) => s.syncSections);
+  const toggle = usePanel((s) => s.toggleSyncSection);
+  const video = bridge?.video;
+  const time = usePanel((s) => s.time);
+  const duration = usePanel((s) => s.duration);
+
+  const [paused, setPaused] = useState(video?.paused ?? true);
+  const [draft, setDraft] = useState(String(step));
+
+  useEffect(() => {
+    if (!video) return;
+    const update = () => setPaused(video.paused);
+    update();
+    video.addEventListener('play', update);
+    video.addEventListener('pause', update);
+    return () => {
+      video.removeEventListener('play', update);
+      video.removeEventListener('pause', update);
+    };
+  }, [video]);
+
+  if (!video) return null;
+
+  const seek = (delta: number) => {
+    video.currentTime = Math.max(0, video.currentTime + delta);
+  };
+  const togglePlay = () => {
+    if (video.paused) void video.play().catch(() => undefined);
+    else video.pause();
+  };
+  const commitStep = () => {
+    const value = parseFloat(draft.replace(',', '.'));
+    if (Number.isFinite(value) && value > 0) setStep(value);
+    setDraft(String(clampStep(value, step)));
+  };
+
+  const chip = (id: SyncSection) => {
+    const section = SECTION_LABELS.find((entry) => entry.id === id)!;
+    return (
+      <button
+        type="button"
+        title={section.title}
+        onClick={() => toggle(id)}
+        className={`rounded border px-1.5 py-1 text-[10px] font-medium transition-colors ${
+          sections[id]
+            ? 'border-sky-400/50 bg-sky-500 text-white'
+            : 'border-transparent text-white/60 hover:bg-white/10'
+        }`}
+      >
+        {section.label}
+      </button>
+    );
+  };
+
+  return (
+    <div className="space-y-1.5">
+      {/* Seek bar: spans the full width, so a time is one click or drag away. */}
+      <div className="flex items-center gap-2">
+        <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/50">
+          {clock(time)}
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={duration > 0 ? duration : 1}
+          step={0.1}
+          value={Math.min(time, duration > 0 ? duration : 1)}
+          disabled={duration <= 0}
+          onChange={(e) => {
+            video.currentTime = Number(e.target.value);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          onKeyUp={(e) => e.stopPropagation()}
+          aria-label="Seek"
+          className="h-1 min-w-0 flex-1 cursor-pointer appearance-none rounded bg-white/20 accent-sky-400 disabled:opacity-40"
+        />
+        <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-white/50">
+          {duration > 0 ? clock(duration) : '--:--'}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
+        <div className="flex justify-start gap-0.5">{chip('timing')}</div>
+        <div className="flex items-center justify-center gap-1">
+        <IconButton label={`Back ${step}s`} onClick={() => seek(-step)}>
+          <path d="M11 7 4 12l7 5V7Zm9 0-7 5 7 5V7Z" />
+        </IconButton>
+        <IconButton label={paused ? 'Play' : 'Pause'} onClick={togglePlay} primary>
+          {paused ? <path d="M8 5v14l11-7L8 5Z" /> : <path d="M7 5h3.5v14H7V5Zm6.5 0H17v14h-3.5V5Z" />}
+        </IconButton>
+        <IconButton label={`Forward ${step}s`} onClick={() => seek(step)}>
+          <path d="m13 7 7 5-7 5V7ZM4 7l7 5-7 5V7Z" />
+        </IconButton>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitStep}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+          onKeyUp={(e) => e.stopPropagation()}
+          title="Seconds to skip per click"
+          className="ml-1 w-9 rounded border border-white/10 bg-black/40 px-1 py-1 text-center text-[11px] tabular-nums text-white/85 outline-none focus:border-sky-400/60"
+        />
+        <span className="text-[10px] text-white/35">s</span>
+        </div>
+        <div className="flex justify-end gap-0.5">
+          {chip('lines')}
+          {chip('drift')}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+function IconButton({
+  label,
+  onClick,
+  primary,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  primary?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`flex h-7 w-8 items-center justify-center rounded border transition-colors ${
+        primary
+          ? 'border-sky-400/50 bg-sky-500 text-white hover:bg-sky-400'
+          : 'border-transparent text-white/75 hover:bg-white/10'
+      }`}
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+        {children}
+      </svg>
+    </button>
+  );
+}
+
+/** What the box should say once an edit is committed: the stored value, clamped. */
+function clampStep(value: number, current: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.min(600, Math.max(0.1, value)) : current;
 }
 
 /* ------------------------------------------------------------------ offset bar */
@@ -148,7 +322,7 @@ function CueList({ cues, activeIndex }: { cues: Cue[]; activeIndex: number }) {
           setScrollTop(e.currentTarget.scrollTop);
           lastManualScroll.current = Date.now();
         }}
-        className="h-64 overflow-y-auto rounded border border-white/10 bg-black/30"
+        className="h-56 overflow-y-auto rounded border border-white/10 bg-black/30"
       >
         {filtered.length === 0 ? (
           <div className="p-3 text-center text-[11px] text-white/35">No lines match "{query}".</div>
@@ -188,19 +362,20 @@ function Row({
       type="button"
       onClick={onClick}
       style={{ height: ROW_HEIGHT }}
-      className={`flex w-full items-start gap-2 border-b border-white/5 px-2 py-1 text-left transition-colors ${
+      title={cue.lines.join(' ')}
+      className={`flex w-full items-center gap-2 border-b border-white/5 px-2 text-left transition-colors ${
         active ? 'bg-sky-500/25' : 'hover:bg-white/10'
       }`}
     >
       <span
-        className={`mt-px shrink-0 font-mono text-[10px] tabular-nums ${
+        className={`shrink-0 font-mono text-[10px] tabular-nums ${
           active ? 'text-sky-200' : 'text-white/35'
         }`}
       >
         {clock(shownAt)}
       </span>
       <span
-        className={`line-clamp-2 text-[11px] leading-tight ${active ? 'text-white' : 'text-white/70'}`}
+        className={`truncate text-[11px] leading-none ${active ? 'text-white' : 'text-white/70'}`}
       >
         {cue.lines.join(' ')}
       </span>
@@ -216,30 +391,15 @@ function DriftFix() {
   const setClickMode = usePanel((s) => s.setClickMode);
   const clearAnchors = usePanel((s) => s.clearAnchors);
   const applyDriftFit = usePanel((s) => s.applyDriftFit);
-  const applyScale = usePanel((s) => s.applyScale);
 
-  const [open, setOpen] = useState(false);
   const [a, b] = sync.anchors;
-  const snap = snapCandidate(sync.scale);
 
   return (
     <div className="rounded border border-white/10 bg-black/20">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left"
-      >
-        <span className="text-[11px] font-medium text-white/70">{open ? '▾' : '▸'} Fix drift</span>
-        <span className="text-[10px] text-white/35">
-          subtitles start right but slip later
-        </span>
-      </button>
-
-      {open && (
-        <div className="space-y-2 border-t border-white/10 px-2 py-2">
+      <div className="space-y-2 px-2 py-2">
           <p className="text-[10px] leading-relaxed text-white/40">
-            Caused by a framerate mismatch, so a single shift can't fix it. Mark one line near the
-            start and another near the end, and the rate is solved from the pair.
+            Subtitles start right but slip later? Mark one line near the start and another near
+            the end, and the rate is solved from the pair.
           </p>
 
           <div className="grid grid-cols-2 gap-1.5">
@@ -266,21 +426,7 @@ function DriftFix() {
             </Button>
           </div>
 
-          {snap && (
-            <div className="rounded border border-emerald-400/30 bg-emerald-500/10 px-2 py-1.5">
-              <div className="text-[10px] text-emerald-200">
-                That rate is very close to <strong>{snap.label}</strong>. Snapping to the exact ratio
-                removes the last of the drift.
-              </div>
-              <div className="mt-1">
-                <Button size="sm" onClick={() => applyScale(snap.value)}>
-                  Snap to {snap.label}
-                </Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

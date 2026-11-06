@@ -3,7 +3,7 @@ import type { SubtitleOverlay } from '@/content/overlay';
 import { selectSync, selectTrack, usePanel } from '@/panel/store';
 import { CueLookup } from '@/lib/subtitles/lookup';
 import { toCueTime } from '@/lib/sync';
-import { Banner, clock } from '@/panel/components/ui';
+import { clock } from '@/panel/components/ui';
 import { SubtitlesTab } from '@/panel/components/SubtitlesTab';
 import { FindTab } from '@/panel/components/FindTab';
 import { StyleTab } from '@/panel/components/StyleTab';
@@ -69,9 +69,6 @@ function Panel() {
   const prefs = usePanel((s) => s.prefs);
   const setPrefs = usePanel((s) => s.setPrefs);
   const setOpen = usePanel((s) => s.setOpen);
-  const error = usePanel((s) => s.error);
-  const notice = usePanel((s) => s.notice);
-  const dismiss = usePanel((s) => s.dismiss);
   const time = usePanel((s) => s.time);
   const duration = usePanel((s) => s.duration);
 
@@ -81,6 +78,8 @@ function Panel() {
   const onPointerDown = (event: React.PointerEvent) => {
     const element = ref.current;
     if (!element) return;
+    // Tabs and buttons in the bar must stay clickable; capture would swallow their click.
+    if ((event.target as HTMLElement).closest('button')) return;
     drag.current = { dx: event.clientX - prefs.x, dy: event.clientY - prefs.y };
     (event.target as HTMLElement).setPointerCapture(event.pointerId);
   };
@@ -102,6 +101,7 @@ function Panel() {
   };
 
   const onPointerUp = (event: React.PointerEvent) => {
+    if (!drag.current) return;
     drag.current = null;
     (event.target as HTMLElement).releasePointerCapture(event.pointerId);
   };
@@ -112,35 +112,25 @@ function Panel() {
       style={{ left: prefs.x, top: prefs.y, pointerEvents: 'auto' }}
       className="@container absolute flex max-h-[92%] w-[40%] min-w-[320px] max-w-full flex-col overflow-hidden rounded-lg border border-white/15 bg-neutral-900/95 font-sans text-white shadow-2xl backdrop-blur-sm"
     >
+      {/* One bar: drag handle, tabs, clock, collapse. The empty space is the drag area. */}
       <header
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        className="flex cursor-grab touch-none items-center gap-2 border-b border-white/10 bg-white/5 px-2.5 py-1.5 active:cursor-grabbing"
+        className="flex cursor-grab touch-none items-end gap-0.5 border-b border-white/10 bg-white/5 px-1.5 pt-1 active:cursor-grabbing"
       >
-        <span className="text-[11px] font-semibold tracking-wide text-sky-400">CC</span>
-        <span className="text-[11px] font-medium text-white/80">Subtitler</span>
-        <span className="ml-auto font-mono text-[10px] tabular-nums text-white/40">
-          {clock(time)}
-          {duration > 0 && ` / ${clock(duration)}`}
-        </span>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          title="Collapse"
-          className="rounded px-1 text-white/50 hover:bg-white/10 hover:text-white"
+        <span
+          className="self-center px-1 text-[11px] font-semibold tracking-wide text-sky-400"
+          title="Subtitler — S: sync to line · G/H: nudge −/+0.1s · Shift+S: hide"
         >
-          −
-        </button>
-      </header>
-
-      <nav className="flex gap-0.5 border-b border-white/10 px-1.5 pt-1.5">
+          CC
+        </span>
         {TABS.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setPrefs({ tab: tab.id })}
-            className={`rounded-t px-2.5 py-1 text-[11px] font-medium transition-colors ${
+            className={`rounded-t px-2 py-1 text-[11px] font-medium transition-colors ${
               prefs.tab === tab.id
                 ? 'bg-white/10 text-white'
                 : 'text-white/45 hover:bg-white/5 hover:text-white/70'
@@ -149,18 +139,25 @@ function Panel() {
             {tab.label}
           </button>
         ))}
-      </nav>
+        <span
+          className="ml-auto self-center whitespace-nowrap pl-1 font-mono text-[10px] tabular-nums text-white/40"
+          title={duration > 0 ? `${clock(time)} / ${clock(duration)}` : undefined}
+        >
+          {clock(time)}
+          {duration > 0 && <span className="hidden @sm:inline"> / {clock(duration)}</span>}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          title="Collapse"
+          className="mb-0.5 self-center rounded px-1.5 text-white/50 hover:bg-white/10 hover:text-white"
+        >
+          −
+        </button>
+      </header>
 
       <div className="flex-1 overflow-y-auto p-2.5">
         <PanelBanner />
-
-        {(error || notice) && (
-          <div className="mb-2.5">
-            <Banner tone={error ? 'error' : 'info'} onDismiss={dismiss}>
-              {error ?? notice}
-            </Banner>
-          </div>
-        )}
 
         {prefs.tab === 'subtitles' && <SubtitlesTab />}
         {prefs.tab === 'find' && <FindTab />}
@@ -169,13 +166,62 @@ function Panel() {
         {prefs.tab === 'sites' && <SitesTab />}
       </div>
 
-      <footer className="flex items-center gap-2 border-t border-white/10 px-2.5 py-1.5">
-        <span className="text-[10px] text-white/30">
-          <kbd className="text-white/50">S</kbd> sync · <kbd className="text-white/50">G</kbd>/
-          <kbd className="text-white/50">H</kbd> nudge ·{' '}
-          <kbd className="text-white/50">Shift+S</kbd> hide
-        </span>
-      </footer>
+      <Toast />
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------------- toast */
+
+/**
+ * Errors and notices float over the bottom of the panel and clear themselves, so they cost
+ * no layout height. Absolutely positioned inside the panel (which is itself `absolute`).
+ */
+function Toast() {
+  const error = usePanel((s) => s.error);
+  const notice = usePanel((s) => s.notice);
+  const action = usePanel((s) => s.noticeAction);
+  const dismiss = usePanel((s) => s.dismiss);
+
+  const message = error ?? notice;
+  const act = error ? null : action;
+
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(dismiss, error ? 6000 : act ? 8000 : 2800);
+    return () => clearTimeout(timer);
+  }, [message, error, act, dismiss]);
+
+  if (!message) return null;
+  return (
+    <div
+      role="status"
+      className={`absolute inset-x-2 bottom-2 z-20 flex items-center gap-2 rounded border px-2 py-1.5 text-[11px] shadow-lg backdrop-blur ${
+        error
+          ? 'border-red-400/40 bg-red-950/90 text-red-100'
+          : 'border-sky-400/30 bg-neutral-800/95 text-sky-50'
+      }`}
+    >
+      <span className="min-w-0 flex-1">{message}</span>
+      {act && (
+        <button
+          type="button"
+          onClick={() => {
+            act.run();
+          }}
+          className="shrink-0 rounded bg-sky-500 px-1.5 py-0.5 font-medium text-white hover:bg-sky-400"
+        >
+          {act.label}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={dismiss}
+        aria-label="Dismiss"
+        className="shrink-0 text-white/50 hover:text-white"
+      >
+        ×
+      </button>
     </div>
   );
 }

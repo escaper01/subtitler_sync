@@ -52,9 +52,7 @@ export function SeriesBrowser() {
         <div className="space-y-2 border-t border-white/10 px-2 py-2">
           <RecentShows />
           <ShowSearch />
-          <SeasonPicker />
-          <EpisodePicker />
-          <Stepper />
+          <EpisodeRow />
         </div>
       )}
     </div>
@@ -162,7 +160,7 @@ function ShowSearch() {
         </ul>
       )}
 
-      {status === 'done' && results.length === 0 && !error && query.trim().length >= 2 && (
+      {status === 'done' && results.length === 0 && !show && !error && query.trim().length >= 2 && (
         <p className="text-[10px] text-white/35">
           No series by that name. TVmaze covers television only — for a film, just type the
           title below.
@@ -176,114 +174,76 @@ function describe(show: Show): string {
   return [show.year, show.network, show.status].filter(Boolean).join(' · ');
 }
 
-/* ------------------------------------------------------------------- seasons */
+/* ------------------------------------------------------------ season / episode */
 
-function SeasonPicker() {
+/**
+ * One row: previous, season, episode, next.
+ *
+ * Selects instead of a chip per season and per episode — a 24-episode season used to wrap
+ * to several lines, with the stepper on yet another. Previous/next walk the real episode
+ * list rather than adding one, so the end of a season crosses into the next correctly
+ * whether it had 7 episodes or 23. Picking an episode, or stepping, runs the search.
+ */
+function EpisodeRow() {
   const seasons = useTv((s) => s.seasons);
   const season = useTv((s) => s.season);
   const setSeason = useTv((s) => s.setSeason);
   const loading = useTv((s) => s.loadingSeasons);
-
-  if (loading) return <p className="text-[10px] text-white/40">Loading episodes…</p>;
-  if (seasons.length === 0) return null;
-
-  return (
-    <div className="flex flex-wrap gap-1">
-      {seasons.map((entry: Season) => (
-        <button
-          key={entry.number}
-          type="button"
-          onClick={() => setSeason(entry.number)}
-          className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums transition-colors ${
-            season === entry.number
-              ? 'bg-sky-500/20 text-sky-200'
-              : 'text-white/45 hover:bg-white/5 hover:text-white/70'
-          }`}
-          // The real count, derived from the episode list — see groupSeasons for why the
-          // seasons endpoint's own number cannot be trusted for a show still airing.
-          title={`${entry.episodes.length} episodes`}
-        >
-          S{entry.number}
-          <span className="ml-1 text-white/25">{entry.episodes.length}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ episodes */
-
-function EpisodePicker() {
-  const seasons = useTv((s) => s.seasons);
-  const season = useTv((s) => s.season);
-  const position = useTv((s) => s.position);
-  const pickEpisode = useTv((s) => s.pickEpisode);
-
-  const current = seasons.find((s) => s.number === season);
-  if (!current) return null;
-
-  return (
-    <div className="flex max-h-24 flex-wrap gap-1 overflow-auto">
-      {current.episodes.map((episode) => {
-        const selected = position?.season === season && position.episode === episode.number;
-        return (
-          <button
-            key={episode.number}
-            type="button"
-            onClick={() => pickEpisode({ season: current.number, episode: episode.number })}
-            title={[episode.name, episode.airdate].filter(Boolean).join(' — ')}
-            className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums transition-colors ${
-              selected
-                ? 'bg-sky-500 text-white'
-                : 'bg-white/5 text-white/50 hover:bg-white/10 hover:text-white/80'
-            }`}
-          >
-            E{episode.number}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------- stepper */
-
-/**
- * Previous / next, which is what removes the typing entirely on a binge.
- *
- * Both walk the real episode list rather than adding one, so the end of a season crosses
- * into the next correctly whether it had 7 episodes or 23.
- */
-function Stepper() {
-  const seasons = useTv((s) => s.seasons);
   const position = useTv((s) => s.position);
   const show = useTv((s) => s.show);
   const step = useTv((s) => s.step);
   const pickEpisode = useTv((s) => s.pickEpisode);
 
-  if (!show || !position || seasons.length === 0) return null;
+  if (loading) return <p className="text-[10px] text-white/40">Loading episodes…</p>;
+  if (!show || seasons.length === 0) return null;
 
-  const previous = previousEpisode(seasons, position);
-  const next = nextEpisode(seasons, position);
-  const episode = episodeAt(seasons, position);
+  const current = seasons.find((s) => s.number === season);
+  const previous = position ? previousEpisode(seasons, position) : null;
+  const next = position ? nextEpisode(seasons, position) : null;
+  const episode = position ? episodeAt(seasons, position) : null;
+  const selected = position?.season === season ? String(position.episode) : '';
+
+  const selectClass =
+    'min-w-0 rounded border border-white/10 bg-black/40 px-1 py-1 text-[11px] text-white/90 outline-none focus:border-sky-400/60';
 
   return (
-    <div className="flex items-center gap-1.5 border-t border-white/10 pt-2">
+    <div className="flex items-center gap-1.5">
       <Button size="sm" onClick={() => step(-1)} disabled={!previous} title="Previous episode">
         ‹
       </Button>
 
-      <button
-        type="button"
-        onClick={() => pickEpisode(position)}
-        className="min-w-0 flex-1 rounded px-1 text-left hover:bg-white/5"
-        title={episode?.name ? `${episode.name} — search again` : 'Search again'}
+      <select
+        value={season ?? ''}
+        onChange={(e) => setSeason(Number(e.target.value))}
+        onKeyDown={(e) => e.stopPropagation()}
+        title="Season"
+        className={`${selectClass} w-16 shrink-0`}
       >
-        <span className="block truncate text-[10px] text-white/70">
-          S{position.season}E{position.episode}
-          {episode?.name && <span className="text-white/35"> · {episode.name}</span>}
-        </span>
-      </button>
+        {season === null && <option value="" />}
+        {seasons.map((entry: Season) => (
+          <option key={entry.number} value={entry.number} className="bg-neutral-900">
+            S{entry.number} ({entry.episodes.length})
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={selected}
+        onChange={(e) =>
+          current && pickEpisode({ season: current.number, episode: Number(e.target.value) })
+        }
+        onKeyDown={(e) => e.stopPropagation()}
+        title={episode?.name ? `${episode.name} — pick to search` : 'Episode — pick to search'}
+        className={`${selectClass} flex-1`}
+      >
+        {selected === '' && <option value="">Episode…</option>}
+        {current?.episodes.map((entry) => (
+          <option key={entry.number} value={entry.number} className="bg-neutral-900">
+            E{entry.number}
+            {entry.name ? ` · ${entry.name}` : ''}
+          </option>
+        ))}
+      </select>
 
       <Button
         size="sm"
@@ -292,7 +252,7 @@ function Stepper() {
         disabled={!next}
         title={next ? `Search for S${next.season}E${next.episode}` : 'End of the series'}
       >
-        Next ›
+        ›
       </Button>
     </div>
   );

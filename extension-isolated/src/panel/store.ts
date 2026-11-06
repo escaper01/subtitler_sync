@@ -20,9 +20,18 @@ import {
   type PanelPrefs,
 } from '@/lib/storage';
 import { loadLanguage, saveLanguage } from '@/lib/searchStorage';
-import { makeAnchor, nudge as nudgeSync, onePointFit, resetSync, twoPointFit } from '@/lib/sync';
+import {
+  makeAnchor,
+  nudge as nudgeSync,
+  onePointFit,
+  resetSync,
+  snapCandidate,
+  twoPointFit,
+} from '@/lib/sync';
 import { videoKey } from '@/lib/videoKey';
 import { log } from '@/lib/log';
+
+export type SyncSection = 'timing' | 'lines' | 'drift';
 
 /** What clicking a line in the cue list does. */
 export type ClickMode = 'quick' | 'anchorA' | 'anchorB';
@@ -108,6 +117,15 @@ export interface PanelState {
 
   error: string | null;
   notice: string | null;
+  /** A button shown inside the toast with `notice` (e.g. "Snap to 25 fps"). */
+  noticeAction: { label: string; run: () => void } | null;
+
+  /** Which optional Sync-tab sections are showing. All off by default to save height. */
+  syncSections: Record<SyncSection, boolean>;
+  toggleSyncSection: (section: SyncSection) => void;
+  /** Seconds the player's skip buttons jump. */
+  seekStep: number;
+  setSeekStep: (seconds: number) => void;
 
   /** Sampled playback position, driving the cue-list highlight. */
   time: number;
@@ -129,7 +147,11 @@ export interface PanelState {
 
   setClickMode: (mode: ClickMode) => void;
   /** The one place a new timing reaches the overlay, the store and storage. */
-  applySync: (next: SyncState, notice: string | null) => void;
+  applySync: (
+    next: SyncState,
+    notice: string | null,
+    action?: { label: string; run: () => void } | null,
+  ) => void;
   syncToCue: (cue: Cue) => void;
   setAnchor: (slot: 0 | 1, cue: Cue) => void;
   clearAnchors: () => void;
@@ -197,6 +219,17 @@ export const usePanel = create<PanelState>((set, get) => ({
 
   error: null,
   notice: null,
+  noticeAction: null,
+
+  syncSections: { timing: false, lines: true, drift: true },
+  toggleSyncSection(section) {
+    const current = get().syncSections;
+    set({ syncSections: { ...current, [section]: !current[section] } });
+  },
+  seekStep: 1,
+  setSeekStep(seconds) {
+    if (Number.isFinite(seconds)) set({ seekStep: Math.min(600, Math.max(0.1, seconds)) });
+  },
 
   time: 0,
   duration: 0,
@@ -265,7 +298,13 @@ export const usePanel = create<PanelState>((set, get) => ({
           ? `Loaded ${track.cues.length} lines, with ${track.warnings.length} warning(s).`
           : `Loaded ${track.cues.length} lines.`;
 
-      set({ track, sync: IDENTITY_SYNC, notice, prefs: { ...get().prefs, tab: 'sync' } });
+      set({
+        track,
+        sync: IDENTITY_SYNC,
+        notice,
+        noticeAction: null,
+        prefs: { ...get().prefs, tab: 'sync' },
+      });
       persist(track, IDENTITY_SYNC);
 
       log.info('panel', 'subtitles loaded', {
@@ -461,6 +500,7 @@ export const usePanel = create<PanelState>((set, get) => ({
         sync: IDENTITY_SYNC,
         find: { ...get().find, loading: null },
         notice: `Loaded ${parsed.cues.length} lines in ${track.name}.`,
+        noticeAction: null,
         prefs: { ...get().prefs, tab: 'sync' },
       });
       persist(parsed, IDENTITY_SYNC);
@@ -487,10 +527,14 @@ export const usePanel = create<PanelState>((set, get) => ({
   },
 
   /** Every sync action funnels through here, so the overlay, store and storage agree. */
-  applySync(next: SyncState, notice: string | null) {
+  applySync(next, notice, action = null) {
     get().bridge?.overlay.setSync(next);
 
-    set({ sync: next, error: null, ...(notice === null ? {} : { notice }) });
+    set({
+      sync: next,
+      error: null,
+      ...(notice === null ? {} : { notice, noticeAction: action }),
+    });
     persist(get().track, next);
   },
 
@@ -542,9 +586,13 @@ export const usePanel = create<PanelState>((set, get) => ({
     }
 
     const drift = result.driftPerHour;
+    const snap = snapCandidate(result.scale);
     get().applySync(
       result.sync,
-      `Rate set to ${(result.scale * 100).toFixed(2)}% — that was ${Math.abs(drift).toFixed(0)}s of drift per hour.`,
+      snap
+        ? `Rate ${(result.scale * 100).toFixed(2)}% — very close to ${snap.label}.`
+        : `Rate set to ${(result.scale * 100).toFixed(2)}% — ${Math.abs(drift).toFixed(0)}s drift/hour fixed.`,
+      snap ? { label: `Snap to ${snap.label}`, run: () => get().applyScale(snap.value) } : null,
     );
   },
 
@@ -603,6 +651,6 @@ export const usePanel = create<PanelState>((set, get) => ({
   },
 
   dismiss() {
-    set({ error: null, notice: null });
+    set({ error: null, notice: null, noticeAction: null });
   },
 }));
