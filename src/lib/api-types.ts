@@ -103,7 +103,7 @@ export interface DonationLinkView {
 /**
  * The donation prompt.
  *
- * Comes from the remote config file rather than a dashboard — see `lib/subtitlecat/config.ts`.
+ * Comes from the bundled config — see `lib/subtitlecat/config.ts`.
  * Every string here is rendered by the extension **inside other people's pages**. Render
  * as text, never as markup, and use `color` only as an inline style value — it is
  * validated as `#rrggbb` on the way in precisely so it can be.
@@ -116,4 +116,19 @@ export interface DonatePrompt {
   color: string;
   /** Already filtered to the usable ones, in the order the config lists them. */
   links: DonationLinkView[];
+}
+
+/**
+ * Whether the subtitle source answered a real end-to-end test: a search, a release page and
+ * a subtitle file. Checked at most once every 24 hours.
+ *
+ * `unknown` is for when the site said "slow down" — that is not the same as broken, and a
+ * red dot would be a lie.
+ */
+export interface SourceStatus {
+  state: 'ok' | 'down' | 'unknown';
+  /** When the check ran, epoch ms. */
+  checkedAt: number;
+  /** Why it is down or unknown; absent when ok. */
+  detail?: string;
 }

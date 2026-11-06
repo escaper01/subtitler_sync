@@ -200,6 +200,10 @@ search** (type a title yourself, which is how you find a film). The search box i
 pre-filled with a guess from the page title. It is never searched automatically, so fix the guess
 if it is wrong and press **Search** (or Enter).
 
+- **Source status:** a dot at the bottom of the tab shows whether the subtitle site works.
+  Green is working, red is not responding, amber is "could not be checked" (for example it asked
+  you to slow down). The test runs at most once every 24 hours; hover the dot for the time and
+  details.
 - **Language:** the dropdown next to the search box picks the subtitle language. Changing it
   re-runs the search.
 - **Results** are listed by *release*, which is the name of the video file somebody timed the
@@ -315,8 +319,9 @@ They work while the panel is open and you are not typing in a box.
   Also make sure the video is longer than 90 seconds and has started playing.
 - **Panel disappeared after reloading the extension?** Reload the page under test as well; old
   scripts do not survive an extension reload.
-- **Search finds nothing?** The subtitle site may have changed its layout. See
-  [`remote/README.md`](./remote/README.md).
+- **Search finds nothing?** Look at the dot at the bottom of the Find tab. Red means the subtitle
+  site is not answering or has changed its layout, so it is not your search. Developers: run
+  `LIVE=1 npm test` to see which.
 - **Spaces do not type into a box?** They do; the panel handles players that grab the space key.
 - **Subtitle looks fine but the speech is slightly off?** Click the line you hear (Lines), or nudge
   with Timing. If it gets worse towards the end, use Drift.
@@ -327,8 +332,8 @@ The architecture, constraints and gotchas are in [`CLAUDE.md`](./CLAUDE.md); the
 (run `npm run dev` and open `/test/local.html`); `sample.srt` and `sample-drift.srt` next to it
 are the fixtures for syncing and drift.
 
-Privacy: the extension makes requests only to `subtitlecat.com`, `api.tvmaze.com` and
-`raw.githubusercontent.com`, always from its background worker. It sends no account, identifier or
+Privacy: the extension makes requests only to `subtitlecat.com` and `api.tvmaze.com`, always
+from its background worker. It sends no account, identifier or
 credential to anyone.
 
 ## Publishing a release

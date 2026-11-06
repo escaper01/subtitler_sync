@@ -19,7 +19,6 @@
     "package:firefox": "npm run build:firefox && web-ext build --source-dir dist-firefox --artifacts-dir release --filename subtitler-firefox-{version}.xpi --overwrite-dest",
     "package": "npm run package:chrome && npm run package:firefox",
     "verify:firefox": "node tools/verify-build.mjs --firefox",
-    "config:publish": "node tools/publish-config.mjs",
     "check": "tsc --noEmit && vitest run && vite build && node tools/verify-build.mjs && vite build --mode firefox && node tools/verify-build.mjs --firefox",
     "preview": "vite preview"
   },

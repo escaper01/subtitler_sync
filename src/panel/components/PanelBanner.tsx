@@ -10,7 +10,7 @@ import { askBackground } from '@/lib/messaging';
  * anything. The extension is free, so this asks rather than gates, and the panel works
  * identically whether or not it is dismissed.
  *
- * The heading, message, colour and every link come from `remote/config.json` and are
+ * The heading, message, colour and every link come from the bundled config (`SITE_CONFIG.donate`) and are
  * rendered here **inside somebody else's page**. Text goes in as text — never markup — and
  * the colour has already been validated as `#rrggbb` by `lib/donate.ts` before it reaches
  * a style value. A URL that was not `http`/`https` was dropped there too.

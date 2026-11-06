@@ -1,6 +1,6 @@
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG } from '@/lib/subtitlecat/config';
+import { SITE_CONFIG } from '@/lib/subtitlecat/config';
 import { fetchText, resolveUpstream } from '@/lib/subtitlecat/http';
 import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
 
@@ -14,8 +14,7 @@ import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
  *   LIVE=1 npm test
  *
  * Run it when a user reports "search finds nothing", before touching any code. If it
- * fails, the fix is a new selector in `remote/config.json` first, and a bump of
- * `DEFAULT_CONFIG` for the next build second.
+ * fails, the fix is a new selector in `SITE_CONFIG`, then a new build.
  *
  * Node's `fetch` stands in for the worker's here, and happy-dom for the offscreen
  * document — instantiated directly rather than as the test environment, because the
@@ -23,7 +22,7 @@ import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
  */
 
 const live = process.env.LIVE === '1';
-const { base, searchPath, selectors } = DEFAULT_CONFIG;
+const { base, searchPath, selectors } = SITE_CONFIG;
 
 const window = new Window();
 

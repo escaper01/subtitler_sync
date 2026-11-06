@@ -36,8 +36,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   try {
     sendResponse(handle(candidate as ToOffscreen));
   } catch (err) {
-    // A selector from the remote config that does not parse lands here. The worker
-    // retries with the bundled selectors on this answer.
+    // A selector that does not parse lands here and reaches the worker as a failure.
     sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
   return false;

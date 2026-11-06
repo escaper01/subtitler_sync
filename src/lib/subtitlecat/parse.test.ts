@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG } from '@/lib/subtitlecat/config';
+import { SITE_CONFIG } from '@/lib/subtitlecat/config';
 import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
 
 /**
@@ -14,8 +14,8 @@ import { parseDetail, parseSearch } from '@/lib/subtitlecat/parse';
  * filenames, a Translate button where a Download link would be, and a row with no size.
  */
 
-const SEARCH = DEFAULT_CONFIG.selectors.search;
-const DETAIL = DEFAULT_CONFIG.selectors.detail;
+const SEARCH = SITE_CONFIG.selectors.search;
+const DETAIL = SITE_CONFIG.selectors.detail;
 
 function doc(html: string): Document {
   return new DOMParser().parseFromString(html, 'text/html');

@@ -4,13 +4,12 @@ import type {
   Release,
   ReleaseResponse,
   SearchResponse,
+  SourceStatus,
   Track,
 } from '@/lib/api-types';
 import { PAGE_SIZE } from '@/lib/api-types';
-import type { RemoteConfig } from '@/lib/subtitlecat/config';
-import { DEFAULT_CONFIG } from '@/lib/subtitlecat/config';
+import { SITE_CONFIG as config } from '@/lib/subtitlecat/config';
 import { fetchText, resolveUpstream, UpstreamError } from '@/lib/subtitlecat/http';
-import { loadConfig } from '@/lib/subtitlecat/remote';
 import type { Detail } from '@/lib/subtitlecat/parse';
 import { parseOffscreen } from '@/background/offscreen';
 
@@ -95,53 +94,23 @@ async function writeCache<T>(key: string, data: T): Promise<void> {
 
 /* -------------------------------------------------------------------- parsing */
 
-function sameSelectors(a: object, b: object): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+function parseSearchPage(html: string): Promise<Release[]> {
+  return parseOffscreen<Release[]>({
+    target: 'offscreen',
+    kind: 'parse:search',
+    html,
+    selectors: config.selectors.search,
+  });
 }
 
-/**
- * Parse with the remote selectors, and if *those* are what failed, once more with the
- * bundled ones. A typo pushed to `remote/config.json` should cost one extra parse, not
- * every search until it is fixed.
- */
-async function parseSearchPage(html: string, config: RemoteConfig): Promise<Release[]> {
-  try {
-    return await parseOffscreen<Release[]>({
-      target: 'offscreen',
-      kind: 'parse:search',
-      html,
-      selectors: config.selectors.search,
-    });
-  } catch (err) {
-    if (sameSelectors(config.selectors.search, DEFAULT_CONFIG.selectors.search)) throw err;
-    return parseOffscreen<Release[]>({
-      target: 'offscreen',
-      kind: 'parse:search',
-      html,
-      selectors: DEFAULT_CONFIG.selectors.search,
-    });
-  }
-}
-
-async function parseDetailPage(html: string, id: string, config: RemoteConfig): Promise<Detail> {
-  try {
-    return await parseOffscreen<Detail>({
-      target: 'offscreen',
-      kind: 'parse:detail',
-      html,
-      id,
-      selectors: config.selectors.detail,
-    });
-  } catch (err) {
-    if (sameSelectors(config.selectors.detail, DEFAULT_CONFIG.selectors.detail)) throw err;
-    return parseOffscreen<Detail>({
-      target: 'offscreen',
-      kind: 'parse:detail',
-      html,
-      id,
-      selectors: DEFAULT_CONFIG.selectors.detail,
-    });
-  }
+function parseDetailPage(html: string, id: string): Promise<Detail> {
+  return parseOffscreen<Detail>({
+    target: 'offscreen',
+    kind: 'parse:detail',
+    html,
+    id,
+    selectors: config.selectors.detail,
+  });
 }
 
 /* ------------------------------------------------------------------- upstream */
@@ -157,7 +126,7 @@ function normaliseQuery(query: string): string {
   return query.trim().replace(/\s+/g, ' ');
 }
 
-async function search(query: string, config: RemoteConfig): Promise<Release[]> {
+async function search(query: string): Promise<Release[]> {
   const key = SEARCH_PREFIX + query.toLowerCase();
   const cached = await readCache<Release[]>(key, SEARCH_TTL_MS);
   if (cached) return cached;
@@ -166,13 +135,13 @@ async function search(query: string, config: RemoteConfig): Promise<Release[]> {
     config.searchPath.replace('{query}', encodeURIComponent(query)),
     `${config.base}/`,
   );
-  const releases = (await parseSearchPage(await fetchText(config.base, url), config)).sort(byQuality);
+  const releases = (await parseSearchPage(await fetchText(config.base, url))).sort(byQuality);
 
   await writeCache(key, releases);
   return releases;
 }
 
-async function releaseTracks(path: string, config: RemoteConfig): Promise<ReleaseResponse> {
+async function releaseTracks(path: string): Promise<ReleaseResponse> {
   const url = resolveUpstream(config.base, path);
   if (!/\.html$/i.test(url.pathname)) {
     throw new UpstreamError('Not a release page.', 'bad_request');
@@ -183,7 +152,7 @@ async function releaseTracks(path: string, config: RemoteConfig): Promise<Releas
 
   let detail = await readCache<Detail>(key, DETAIL_TTL_MS);
   if (!detail) {
-    detail = await parseDetailPage(await fetchText(config.base, url), id, config);
+    detail = await parseDetailPage(await fetchText(config.base, url), id);
     await writeCache(key, detail);
   }
 
@@ -244,11 +213,9 @@ export async function searchSubtitles(
     return { ok: false, error: 'Pick a language.', code: 'bad_request' };
   }
 
-  const config = await loadConfig();
-
   let all: Release[];
   try {
-    all = await search(normalised, config);
+    all = await search(normalised);
   } catch (err) {
     return failure(err, 'Could not search subtitlecat.');
   }
@@ -257,7 +224,7 @@ export async function searchSubtitles(
   const releases = all.slice(start, start + PAGE_SIZE);
 
   const settled = await Promise.allSettled(
-    releases.map((release) => releaseTracks(release.path, config)),
+    releases.map((release) => releaseTracks(release.path)),
   );
 
   const tracks: Track[] = [];
@@ -288,9 +255,8 @@ export async function searchSubtitles(
 }
 
 export async function fetchRelease(path: string, lang: string): Promise<ApiResult<ReleaseResponse>> {
-  const config = await loadConfig();
   try {
-    const release = await releaseTracks(path, config);
+    const release = await releaseTracks(path);
     return {
       ok: true,
       data: { ...release, tracks: filterByLanguages(release.tracks, parseLanguages(lang)) },
@@ -304,8 +270,6 @@ export async function fetchRelease(path: string, lang: string): Promise<ApiResul
 export async function downloadSubtitle(
   path: string,
 ): Promise<ApiResult<{ text: string; filename: string }>> {
-  const config = await loadConfig();
-
   try {
     const url = resolveUpstream(config.base, path);
     if (!/\.(srt|vtt)$/i.test(url.pathname)) {
@@ -329,14 +293,14 @@ export async function downloadSubtitle(
 }
 
 /**
- * The donation prompt, from the remote config.
+ * The donation prompt, from the bundled config (off unless a build enables it).
  *
  * Everyone gets the same answer. Every string in it is rendered by the panel **inside
  * somebody else's page**, so it was validated on the way in (`lib/donate.ts`) — render it
  * as text and use `color` only as an inline style value.
  */
-export async function fetchDonatePrompt(): Promise<ApiResult<DonatePrompt>> {
-  return { ok: true, data: (await loadConfig()).donate };
+export function fetchDonatePrompt(): Promise<ApiResult<DonatePrompt>> {
+  return Promise.resolve({ ok: true, data: config.donate });
 }
 
 function safeDecode(value: string): string {
@@ -345,4 +309,89 @@ function safeDecode(value: string): string {
   } catch {
     return value;
   }
+}
+
+/* --------------------------------------------------------------- source status */
+
+const STATUS_KEY = 'sc:status';
+const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
+/** A title that has always had releases, in more than one language. */
+const PROBE_QUERY = 'the matrix';
+/** How many releases to look through for one with a downloadable file. */
+const PROBE_RELEASES = 3;
+
+/**
+ * An end-to-end test of the source: search, open a release, download a subtitle and see
+ * that it looks like one. Bypasses the caches, because the point is to ask the site.
+ *
+ * Costs at most one search, three release pages and one file — once a day.
+ */
+async function probeSource(): Promise<SourceStatus> {
+  const checkedAt = Date.now();
+  try {
+    const url = new URL(config.searchPath.replace('{query}', encodeURIComponent(PROBE_QUERY)), `${config.base}/`);
+    const releases = await parseSearchPage(await fetchText(config.base, url));
+    if (releases.length === 0) {
+      return { state: 'down', checkedAt, detail: 'The search page returned no results. The site may have changed its layout.' };
+    }
+
+    for (const release of releases.slice(0, PROBE_RELEASES)) {
+      const resolved = resolveUpstream(config.base, release.path);
+      const id = resolved.pathname.replace(/^\/+/, '').replace(/\.html$/i, '');
+      const detail = await parseDetailPage(await fetchText(config.base, resolved), id);
+      const track = detail.missing ? undefined : detail.tracks[0];
+      if (!track) continue;
+
+      const file = await downloadSubtitle(track.path);
+      if (file.ok) return { state: 'ok', checkedAt };
+      if (file.code === 'rate_limited') return { state: 'unknown', checkedAt, detail: file.error };
+      return { state: 'down', checkedAt, detail: file.error };
+    }
+
+    return { state: 'down', checkedAt, detail: 'No release page offered a downloadable subtitle.' };
+  } catch (err) {
+    if (err instanceof UpstreamError && err.code === 'rate_limited') {
+      return { state: 'unknown', checkedAt, detail: err.message };
+    }
+    return {
+      state: 'down',
+      checkedAt,
+      detail: err instanceof Error ? err.message : 'The subtitle site could not be reached.',
+    };
+  }
+}
+
+let probing: Promise<SourceStatus> | null = null;
+
+/**
+ * The source's status: the stored answer if it is under a day old, otherwise a fresh test.
+ *
+ * Stored in `storage.local`, not worker memory, which is suspended after ~30s idle. Offline
+ * is not "the site is down": a probe that fails because the browser has no network is not
+ * saved, so it is retried the next time the Find tab opens rather than for a day.
+ */
+export async function getSourceStatus(): Promise<SourceStatus> {
+  try {
+    const stored = (await chrome.storage.local.get(STATUS_KEY))[STATUS_KEY] as SourceStatus | undefined;
+    if (stored && Date.now() - stored.checkedAt < STATUS_TTL_MS) return stored;
+  } catch {
+    /* fall through to a fresh test */
+  }
+
+  probing ??= probeSource()
+    .then(async (status) => {
+      const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+      if (status.state !== 'unknown' && !offline) {
+        try {
+          await chrome.storage.local.set({ [STATUS_KEY]: status });
+        } catch {
+          /* not worth an error */
+        }
+      }
+      return offline ? { ...status, state: 'unknown' as const, detail: 'You appear to be offline.' } : status;
+    })
+    .finally(() => {
+      probing = null;
+    });
+  return probing;
 }

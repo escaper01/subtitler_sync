@@ -139,6 +139,8 @@ export type ToBackground =
   | { kind: 'api:search'; query: string; lang: string; page: number }
   | { kind: 'api:release'; path: string; lang: string }
   | { kind: 'api:download'; path: string }
+  /** Whether the subtitle site is working; a stored answer under a day old, else a test. */
+  | { kind: 'api:status' }
   /**
    * Browsing a series on TVmaze, to build a search query without typing it.
    *
@@ -149,7 +151,7 @@ export type ToBackground =
   | { kind: 'tv:search'; query: string }
   | { kind: 'tv:seasons'; showId: number }
   /**
-   * The donation prompt from the remote config, or nothing.
+   * The donation prompt from the bundled config, or nothing.
    *
    * There were three `auth:*` variants beside this one, carrying a licence key, and then
    * an install id sent as a header for a server-side rate limiter. Both are gone: this

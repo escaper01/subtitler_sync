@@ -13,10 +13,9 @@ import type { DetailSelectors, SearchSelectors } from '@/lib/subtitlecat/config'
  *
  *   1. Every field except the link itself is optional. A missing download count or size
  *      degrades a row, it does not drop it. Only a row without a usable path is skipped.
- *   2. **The selectors are parameters**, not constants. They come from the remote config
- *      (`config.ts`), so a renamed class on the site is an edit to a JSON file. A selector
- *      that does not parse throws out of `querySelector`, and the caller retries with the
- *      bundled defaults — so this file does not catch anything itself.
+ *   2. **The selectors are parameters**, not constants. They live in `config.ts`, so a
+ *      renamed class on the site is an edit to one object. A selector that does not parse
+ *      throws out of `querySelector` and surfaces as a failure — this file catches nothing.
  */
 
 /** `subs/45/Some.Release.html` → a stable id. The numeric segment alone is not unique. */

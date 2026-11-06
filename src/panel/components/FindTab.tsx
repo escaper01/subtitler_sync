@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Release } from '@/lib/api-types';
+import type { Release, SourceStatus } from '@/lib/api-types';
+import { askBackground } from '@/lib/messaging';
 import { PAGE_SIZE } from '@/lib/api-types';
 import { usePanel, trackKey } from '@/panel/store';
 import { useTv } from '@/panel/tvStore';
@@ -48,6 +49,54 @@ export function FindTab() {
       <Refusal />
 
       <Results />
+
+      <SourceLine />
+    </div>
+  );
+}
+
+/**
+ * A dot for whether the subtitle site is working, so a dead source is not mistaken for
+ * "this film has no subtitles". The worker runs a real end-to-end test at most once every
+ * 24 hours and remembers the answer; opening this tab only asks for it.
+ */
+function SourceLine() {
+  const [status, setStatus] = useState<SourceStatus | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void askBackground<SourceStatus>({ kind: 'api:status' }).then((value) => {
+      if (live && value) setStatus(value);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const look = {
+    ok: { dot: 'bg-emerald-400', text: 'working' },
+    down: { dot: 'bg-red-500', text: 'not responding' },
+    unknown: { dot: 'bg-amber-400', text: 'could not be checked' },
+  } as const;
+  const shown = status ? look[status.state] : { dot: 'bg-white/25', text: 'checking…' };
+
+  const title = status
+    ? `${status.detail ? `${status.detail}
+` : ''}Last tested ${new Date(status.checkedAt).toLocaleString()}. ` +
+      'Tested once every 24 hours. Most subtitles there are machine translations, so prefer a ' +
+      'release whose filename matches what you are watching.'
+    : 'Testing the subtitle source…';
+
+  return (
+    <div
+      className="flex items-center gap-1.5 text-[10px] text-white/40"
+      title={title}
+      role="status"
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${shown.dot}`} />
+      <span>
+        subtitlecat.com <span className="text-white/55">{shown.text}</span>
+      </span>
     </div>
   );
 }
@@ -144,14 +193,7 @@ function Results() {
   const find = usePanel((s) => s.find);
   const runSearch = usePanel((s) => s.runSearch);
 
-  if (find.status === 'idle') {
-    return (
-      <p className="text-[10px] leading-relaxed text-white/30">
-        Searches subtitlecat.com in your chosen language. Most subtitles there are machine
-        translations, so prefer a release whose filename matches what you are watching.
-      </p>
-    );
-  }
+  if (find.status === 'idle') return null;
 
   if (find.status === 'searching') {
     return <p className="text-[11px] text-white/40">Searching…</p>;

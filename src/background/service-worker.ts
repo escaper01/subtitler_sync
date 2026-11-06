@@ -1,7 +1,13 @@
 import type { TabState, ToBackground, ToBackgroundFromPopup } from '@/types';
 import { EMPTY_TAB_STATE } from '@/types';
 import { broadcastToTab, onMessage } from '@/lib/messaging';
-import { downloadSubtitle, fetchDonatePrompt, fetchRelease, searchSubtitles } from '@/lib/api';
+import {
+  downloadSubtitle,
+  fetchDonatePrompt,
+  fetchRelease,
+  getSourceStatus,
+  searchSubtitles,
+} from '@/lib/api';
 import { fetchSeasons, searchShows } from '@/lib/tvmaze';
 
 /**
@@ -110,6 +116,10 @@ onMessage<ToBackground | ToBackgroundFromPopup>((message, sender) => {
 
     case 'tv:seasons': {
       return fetchSeasons(message.showId);
+    }
+
+    case 'api:status': {
+      return getSourceStatus();
     }
 
     case 'donate': {
