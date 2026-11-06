@@ -10,9 +10,12 @@ so read it before touching `src/`.
 
 ## Status
 
-Working: the overlay, the sync tool, a single subtitle track with its own timing, the site
-allowlist, subtitle search with one-click loading, the TVmaze series browser, the donation
-prompt, and a Firefox build alongside the Chrome one.
+Working: the overlay, the sync tool (seek bar and player controls, click-a-line sync, offset
+nudging, two-point drift fix), a single subtitle track with its own timing, the site allowlist,
+subtitle search with one-click loading and a daily source-status dot, the TVmaze series browser,
+a compact panel (one top bar, toasts instead of banners), the donation prompt (off by default), a
+Firefox build (desktop and Nightly on Android) alongside the Chrome / Edge / Brave one, and
+GitHub releases built by `npm run package`.
 
 There is no money in this codebase — no licence keys, accounts or paywall, and the extension
 carries no credential. Monetisation is donation links only.
@@ -49,7 +52,8 @@ toolbar popup.
 ### Firefox
 
 `npm run build:firefox` (Vite `--mode firefox`) writes `dist-firefox/`; `npm run check` builds
-and verifies both. Load it from `about:debugging` → *This Firefox* → *Load Temporary Add-on* →
+and verifies both. Firefox 140+ on desktop, 142+ on Android (the `gecko` / `gecko_android`
+minimums in the manifest, driven by `data_collection_permissions`). Load it from `about:debugging` → *This Firefox* → *Load Temporary Add-on* →
 pick `dist-firefox/manifest.json`. It is the same source — the differences are all in
 `manifest.config.ts`, `vite.config.ts` and `background/offscreen.ts`:
 
@@ -67,7 +71,13 @@ pick `dist-firefox/manifest.json`. It is the same source — the differences are
 - **Not tested on a real Firefox from CI** — only built and structurally verified. Run the
   harness (`npm run dev:firefox`, `test/local.html`) in Firefox before shipping.
 
-#### Installing unsigned builds for development
+#### Installing unsigned builds (desktop and Nightly on Android)
+
+`npm run package:firefox` writes `release/subtitler-firefox-<v>.xpi`. Release Firefox only runs
+add-ons signed by Mozilla; Developer Edition, Nightly and ESR can run unsigned ones. Android is
+Nightly-only for this: copy the `.xpi` over, set the flag below, tap the logo five times in
+*Settings > About Firefox Nightly*, then *Install extension from file*. The README has the
+step-by-step.
 
 To install `.xpi` files that haven't been signed by Mozilla:
 
@@ -100,8 +110,8 @@ pushes them into a buffer that exists only in that page's JavaScript heap. Conse
 - **The network layer is therefore irrelevant to the feature.** Subtitles are a DOM overlay
   driven by `video.currentTime`. Nothing else is needed.
 - The only genuinely hard problem is *reaching* the `<video>` element, because it lives in a
-  cross-origin child frame. Hence: inject into all frames, render the overlay in the frame that
-  owns the video, and drive it from a panel in the top frame via the service worker.
+  cross-origin child frame. Hence: inject into all frames and render both the overlay and the
+  panel in the frame that owns the video (see invariant 2).
 
 The iframe chain, for orientation:
 
@@ -151,10 +161,10 @@ Subtitles are text the user asked for by name; the video is not, and is not touc
 
 | | |
 |---|---|
-| Platform | Chrome / Edge, Manifest V3 — and Firefox 128+, see *Firefox* below |
+| Platform | Chrome / Edge / Brave, Manifest V3 — and Firefox 140+ (Android Nightly 142+), see *Firefox* below |
 | Language | TypeScript (strict) |
 | Build | Vite + `@crxjs/vite-plugin` v2 |
-| UI | React 18 + Tailwind, mounted into shadow DOM |
+| UI | React 19 + Tailwind 4, mounted into shadow DOM |
 | State | `zustand` (panel only) |
 
 No other runtime dependencies. The cue-list virtualization is hand-rolled (~30 lines) rather than
@@ -171,13 +181,16 @@ npm run check    # typecheck + tests + build + verify, i.e. everything
 npm run build:firefox   # Firefox build into dist-firefox/
 npm run verify:firefox  # the same loadability check for dist-firefox/
 npm run verify   # assert dist/ is loadable — see the entry-basename gotcha
+npm run package  # release/subtitler-chrome-<v>.zip + subtitler-firefox-<v>.xpi
 npm run icons    # regenerate public/icons/* from tools/make-icons.mjs
+npm run key      # generate key.pem (the Chrome extension id); git-ignored, back it up
 ```
 
 Tests cover the pure logic — `lib/subtitles/parse.ts`, `lib/sync.ts`, `lib/subtitles/lookup.ts`,
-`lib/sites.ts`, `lib/searchTitle.ts`, and now `lib/subtitlecat/*` — because those are where a
+`lib/sites.ts`, `lib/searchTitle.ts`, `lib/tv.ts` and `lib/subtitlecat/*` — because those are where a
 subtle error is invisible on screen. The DOM-facing parts (overlay positioning, detection) are
-verified through the harness instead. The subtitlecat parser runs under `happy-dom` in tests
+verified through the harness instead (`test/local.html` carries a checklist that covers every
+tab). The panel components have no automated tests. The subtitlecat parser runs under `happy-dom` in tests
 and under the offscreen document's `DOMParser` in the extension; it sees a `Document` either way.
 
 ```bash
@@ -212,31 +225,10 @@ Avoid `update code`, `fixes`, `wip`, and anything that restates the file name. I
 
 ---
 
-### Publishing a release
-
-Bump `version` in `package.json` (the manifest reads it), run `npm run check`, then:
-
-```bash
-npm run package        # writes release/subtitler-chrome-<v>.zip and subtitler-firefox-<v>.xpi
-gh release create v<v> release/subtitler-chrome-<v>.zip release/subtitler-firefox-<v>.xpi --title "v<v>" --notes "What changed"
-```
-
-`release/` is git-ignored. The same files can be dragged onto the release page instead of using
-`gh`. The Firefox `.xpi` is unsigned; users of release Firefox need Mozilla to sign it (see
-README, *Export the extension*).
-
-### Keyboard shortcuts
-
-Active only while the panel is open and focus is not in a text box (`useHotkeys` in
-`panel/App.tsx`): `S` sync to the line being spoken, `G` / `H` nudge 0.1 s earlier / later,
-`Shift+S` collapse the panel. `Alt+Shift+S` (manifest command `toggle-panel`, remappable at
-`chrome://extensions/shortcuts`) shows or hides it from anywhere.
-
 **Loading it:** `chrome://extensions` → enable Developer mode → *Load unpacked* → select `dist/`.
 After a rebuild, hit the reload icon on the extension card, then reload the page under test —
 old content scripts do not survive an extension reload (see gotchas).
 
-**Shortcuts:** `Alt+Shift+S` toggles the panel, remappable at `chrome://extensions/shortcuts`.
 The toolbar icon opens the popup, which is where sites are allowed.
 
 **Icons:** `public/icons/` — generated by `npm run icons` from `tools/make-icons.mjs`, which draws
@@ -259,6 +251,26 @@ Serving over `http://localhost` rather than `file://` is deliberate: file URLs n
 detection bug. `localhost` is in the default allowlist for the same reason — otherwise the harness
 would come up dead and look like one too.
 
+### Publishing a release
+
+Bump `version` in `package.json` (the manifest reads it), run `npm run check`, then:
+
+```bash
+npm run package        # writes release/subtitler-chrome-<v>.zip and subtitler-firefox-<v>.xpi
+gh release create v<v> release/subtitler-chrome-<v>.zip release/subtitler-firefox-<v>.xpi --title "v<v>" --notes "What changed"
+```
+
+`release/` is git-ignored. The same files can be dragged onto the release page instead of using
+`gh`. The Firefox `.xpi` is unsigned; users of release Firefox need Mozilla to sign it (see
+README, *Export the extension*).
+
+### Keyboard shortcuts
+
+Active only while the panel is open and focus is not in a text box (`useHotkeys` in
+`panel/App.tsx`): `S` sync to the line being spoken, `G` / `H` nudge 0.1 s earlier / later,
+`Shift+S` collapse the panel. `Alt+Shift+S` (manifest command `toggle-panel`, remappable at
+`chrome://extensions/shortcuts`) shows or hides it from anywhere.
+
 ---
 
 ### Structure
@@ -276,7 +288,7 @@ src/
     tvmaze.ts            the TVmaze client and its caches — SERVICE WORKER ONLY
     style.ts             DEFAULT_STYLE, the clamps, and the stack + per-block CSS
     sites.ts             the allowlist: normalising, matching, storage, top-host resolution
-    api.ts               subtitle search: fetch subtitlecat, cache, answer the panel — SERVICE WORKER ONLY
+    api.ts               subtitle search, downloads, source-status probe — SERVICE WORKER ONLY
     api-types.ts         the shapes the panel consumes
     languages.ts         the subtitle languages offered in search
     donate.ts            validators for the donation prompt — pure, see below
@@ -285,6 +297,7 @@ src/
       http.ts            fetchText, resolveUpstream: the only code that talks to subtitlecat — SERVICE WORKER ONLY
       parse.ts           HTML → Release / Track, driven by the selectors — OFFSCREEN DOCUMENT
     searchTitle.ts       guesses a film title from the tab's <title> to seed the search box
+    searchStorage.ts     the remembered search language (storage.sync)
     messaging.ts         typed wrappers over chrome.runtime / chrome.tabs messaging
     storage.ts           style + allowlist + language → sync; per-film track and timing → local
     videoKey.ts          stable per-film id (top page path + title + rounded duration)
@@ -304,16 +317,42 @@ src/
     overlay.ts           shadow-DOM renderer, rect tracking, fullscreen handling
     panel-host.ts        mounts the React panel — only in the frame that owns the video
 
-  panel/                 React app rendered in-page (Dropzone, StyleControls, SyncTool, CueList, …)
+  panel/
+    App.tsx              the shell: top bar (drag handle, tabs, clock, collapse), Toast, hotkeys
+    store.ts             usePanel (zustand): track, sync, style, find state, notices, Sync sections
+    tvStore.ts           useTv: the series browser, a separate store on purpose
+    components/          SubtitlesTab (File), FindTab, SyncTab, StyleTab, SitesTab, SeriesBrowser,
+                         SitesEditor, LanguagePicker, PanelBanner, ui.tsx (shared primitives)
   popup/                 toolbar popup: allow/block the current site, open the panel
 
 public/icons/            generated by `npm run icons`
-tools/make-icons.mjs     the generator
+tools/                   make-icons, make-key, verify-build (run by `npm run check`)
+test/                    offline harness: local.html (with a checklist), frame.html, sample .srt files
+docs/screenshots/        the README's images
+release/                 `npm run package` output (git-ignored)
 ```
 
 **Panel size.** The panel is `40%` of the player's width (floor 320 px, never wider than the
 player) and a Tailwind `@container`, so the Style tab goes to three columns once the panel is
 wide enough. Dragging clamps against the player, so it cannot be stranded off-screen.
+
+**Panel layout, and why it is this thin.** The panel is clipped to the player, so every row
+counts. There is one top bar (`CC`, the five tabs, the clock, collapse) and no footer; the bar's
+empty space is the drag handle, and pointer-down ignores anything inside a `<button>` so the
+tabs stay clickable. Errors and notices are **toasts**: `error` / `notice` / `noticeAction` in
+`usePanel`, rendered by `Toast` in `App.tsx`, absolutely positioned over the bottom of the panel
+so they cost no layout height, and auto-dismissed (about 3 s for a notice, 6 s for an error, 8 s
+when it carries an action such as *Snap to 25 fps*). Set `notice` through the store; do not add
+inline banners. Search errors inside the Find tab stay inline, next to the button that caused
+them.
+
+**The Sync tab.** A seek bar across the full width, play/pause and skip buttons (SVG icons, never
+emoji) with a skip-length box (`seekStep`, default 1 s), and chips that show or hide three
+sections: Timing (off by default), Lines and Drift (on). `syncSections` lives in the store, so
+the choice survives a tab switch but not a reload. A hidden section is not rendered at all. The
+cue list is virtualised with a **fixed** `ROW_HEIGHT` (24 px, one truncated line per cue, full
+text in the tooltip); auto-height rows for two-line cues would break the scroll maths, which is
+why they are not used.
 
 #### Where things run
 
@@ -339,7 +378,7 @@ them go through the service worker:
 content script  --sendToBackground-->  background     video-seen, video-detected, get-top-url
 background      --broadcastToTab---->  content script toggle-panel
 popup           --askBackground----->  background     tab state, toggle-panel relay
-panel           --askBackground----->  background     api:search, api:release, api:download
+panel           --askBackground----->  background     api:search, api:release, api:download, api:status
 panel/popup     --askBackground----->  background     donate
 background      --sendMessage------->  offscreen      parse:search, parse:detail
 ```
@@ -363,6 +402,8 @@ All message shapes live in the `ToBackground` / `ToContent` / `ToBackgroundFromP
 **To add a message type:** add a variant to the relevant union, then handle it in
 `background/service-worker.ts`'s router and in whichever context receives it. Those `switch` statements
 have no `default` case on purpose — keep it that way, so an unhandled variant is a type error.
+
+`api:status` returns the source-status dot's state (see *Subtitle search*).
 
 The service worker is suspended after ~30s idle, so **nothing may assume its in-memory state
 survives**. What it holds — which tabs turned out to contain a film — is a hint for the popup,
@@ -453,16 +494,16 @@ and that is where it is handled. The `offscreen` permission in the manifest is f
 
 **Caching, around a worker that gets suspended.** As with TVmaze: nothing lives in worker
 memory. Search results and release pages go in `storage.session` (`sc:search:*`,
-`sc:detail:*`), six hours and one hour respectively — so flipping the second language or
-paging back does not refetch. The config goes in `storage.local`, because it should survive
-a browser restart. What is cached is per install; there is no shared cache any more, and a
+`sc:detail:*`), six hours and one hour respectively — so changing the language or paging back
+does not refetch. The source-status result goes in `storage.local` (`sc:status`), because a
+day-long answer should survive a browser restart. What is cached is per install; there is no shared cache any more, and a
 popular film is fetched once per person rather than once for everyone.
 
 **The shapes did not change.** `lib/api.ts` still exports `searchSubtitles`, `fetchRelease`,
 `downloadSubtitle` and `fetchDonatePrompt` returning `ApiResult<T>`, and `lib/api-types.ts`
 still describes `Release`, `Track`, `SearchResponse` and `ReleaseResponse` — which is why
-`panel/store.ts`, `FindTab` and the popup never learned the server was gone. What went: `ApiFailure.action` (a server-owned button, for a server that could move it) and
-the `server` error code.
+`panel/store.ts`, `FindTab` and the popup never learned the server was gone. What went:
+`ApiFailure.action` (a server-owned button) and the `server` error code.
 
 **Search is free, like everything else.** There is no licence key, no sign-in and no
 credential of any kind.
@@ -472,8 +513,14 @@ The manifest pins its own `key` — `key.pem` (git-ignored). Back it up.
 **The donation prompt** (`PanelBanner`, and `DonateLine` in the popup) comes from the same
 `SITE_CONFIG.donate` (off by default). Its heading, message, colour and links are rendered
 **inside somebody else's page** — as text, never markup, with the colour only ever an inline
-style value. `lib/donate.ts` validates it on this side, since there is no server to do so: `http`/`https` URLs only, `#rrggbb` only, every string
-collapsed and capped, and a link that fails is dropped rather than rendered dead.
+style value. `lib/donate.ts` validates it on this side, since there is no server to do so:
+`http`/`https` URLs only, `#rrggbb` only, every string collapsed and capped, and a link that
+fails is dropped rather than rendered dead.
+
+**Find tab layout.** Two collapsible sections, *Series* and *Custom search*, then results, then
+the status dot. Custom search collapses itself the moment a series episode becomes active (the
+series browser is then driving the searches) and reopens when none is. Results are releases with
+a **Use** button and *Back / More* paging.
 
 The UI mirrors what the search actually returns: a list of *releases* (someone's upload, named
 after the video file it was timed against), each holding one subtitle per language. Picking by
@@ -527,6 +574,11 @@ airing and is the *ordered* count rather than the episodes actually listed, so t
 somebody is most likely to be watching are exactly the ones it gets wrong. Counting the real
 list cannot fail that way and costs one fetch instead of two.
 
+**One row, not chips.** Previous, a season select, an episode select and next sit on a single
+row (`EpisodeRow` in `SeriesBrowser.tsx`). It replaced a chip per season, a chip per episode and
+a separate stepper, which wrapped to several lines on a long season. Choosing an episode or
+stepping runs the search.
+
 **Next/previous walk the list, they do not add one.** Season one ends at 7 for one show and
 23 for another, so `episode + 1` is right until it silently is not — and the failure looks
 like a search that found nothing rather than like a bug. Holding the real episode list is
@@ -579,8 +631,8 @@ subtitleAppearsAt = cue.start * scale + offset      // defaults: scale = 1, offs
   against a 23.976 fps rip drifts ~4.3 %, i.e. 10+ seconds by the end of a film.
 
 Guards in `lib/sync.ts`: anchors must be ≥ 60 s apart, `scale` is clamped to `[0.9, 1.1]`, and
-when the fitted scale lands within 0.3 % of a known ratio in `FPS_RATIOS` the UI offers to snap
-to the exact value.
+when the fitted scale lands within 0.3 % of a known ratio in `FPS_RATIOS`, `applyDriftFit`
+raises a toast with a *Snap to …* button that applies the exact value.
 
 ---
 
@@ -636,6 +688,13 @@ Each of these has cost real debugging time. They are handled in the code; don't 
   named `service-worker.ts` and `content-script.ts`, and `npm run verify` asserts each loader
   resolves to a chunk built from the entry it names — and that the offscreen page made it into
   `dist/`, since it is opened by URL and nothing else notices when it is missing.
+
+- **Toasts must not take layout.** `Toast` is `absolute` inside the panel on purpose; putting
+  messages back in the flow pushes every tab down, which is what moving them out fixed.
+
+- **Placeholders match by substring.** "Series name" is a substring of the Custom search
+  placeholder "Film or series name", so anything that finds an input by placeholder (tests,
+  scripts) must match exactly.
 
 - **Every runtime listener sees every runtime message.** `chrome.runtime.sendMessage` from the
   panel reaches the worker, the popup if it is open, *and* the offscreen document if it is
