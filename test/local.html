@@ -75,7 +75,7 @@
         <li>
           <code>sample-drift.srt</code> — the same lines, but authored at the wrong framerate
           (25 vs 23.976). It starts almost right and slips further behind as the clip runs, which is
-          what <strong>Fix drift</strong> in the Sync tab is for.
+          what the <strong>Drift</strong> section of the Sync tab is for.
         </li>
       </ul>
     </section>
@@ -83,19 +83,37 @@
     <section>
       <h2 style="font-size: 15px; color: #fff">What to check</h2>
       <ol>
-        <li>Press <strong>Make 100s clip</strong> and wait for it, then play it.</li>
+        <li>Press <strong>Make 100s clip</strong> and wait for it. The panel should appear over the
+          video once it is a film-length clip (the 10s one is ignored on purpose).</li>
         <li>
-          The panel should appear over the video. Load <code>sample.srt</code> — subtitles should
-          match the burned-in clock.
+          <strong>File</strong> tab: load <code>sample.srt</code>. Subtitles should match the
+          burned-in clock, and the panel should jump to the Sync tab with a "Loaded 20 lines"
+          <em>toast</em> that disappears by itself.
         </li>
         <li>
-          Nudge the timing off with <kbd>G</kbd>, then click the line you can see in the Sync tab.
-          It should snap back into place.
+          <strong>Sync</strong> tab, player controls: drag the seek bar and the video follows;
+          play/pause toggles; the back/forward buttons skip by the number in the box (1s by
+          default, try 5 and 0.5). <strong>Lines</strong> and <strong>Drift</strong> are on by
+          default and <strong>Timing</strong> is off; each toggle shows and hides its section.
         </li>
         <li>
-          Load <code>sample-drift.srt</code>. Set anchor A on an early line and anchor B on a late
-          one, press <strong>Apply rate fix</strong>, and it should offer to snap to 23.976 → 25.
+          Turn <strong>Timing</strong> on and press +0.5, or nudge with <kbd>G</kbd>/<kbd>H</kbd>:
+          the subtitles move and a toast says so. Then click the line you can see in the list; it
+          should snap back into place.
         </li>
+        <li>
+          Load <code>sample-drift.srt</code>. In <strong>Drift</strong>, set anchor A on an early
+          line and anchor B on a late one (each time click the anchor, then the line you hear), and
+          press <strong>Apply rate fix</strong>. A toast should offer
+          <strong>Snap to 23.976 → 25</strong>.
+        </li>
+        <li>
+          <strong>Find</strong> tab: the dot at the bottom should turn green ("working") within a
+          few seconds. It runs a real search/download test, at most once every 24 hours. Search
+          for a film, or use <strong>Series</strong> to pick a show, a season and an episode (the
+          single row with ‹ and › runs the search for you). Needs internet.
+        </li>
+        <li><strong>Style</strong> tab: change a preset and a slider; the subtitles update live.</li>
         <li>Go fullscreen. Both the subtitles and the panel must stay visible.</li>
         <li>
           In the <strong>Sites</strong> tab, switch <code>localhost</code> off. The panel and the
