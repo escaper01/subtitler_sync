@@ -332,9 +332,8 @@ The architecture, constraints and gotchas are in [`CLAUDE.md`](./CLAUDE.md); the
 (run `npm run dev` and open `/test/local.html`); `sample.srt` and `sample-drift.srt` next to it
 are the fixtures for syncing and drift.
 
-Privacy: the extension makes requests only to `subtitlecat.com` and `api.tvmaze.com`, always
-from its background worker. It sends no account, identifier or
-credential to anyone.
+Privacy: the extension makes requests only to its subtitle source and `api.tvmaze.com`, always
+from its background worker. It sends no account, identifier or credential to anyone.
 
 ## Publishing a release
 

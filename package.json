@@ -1,6 +1,6 @@
 {
   "name": "subtitler-extension-isolated",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Overlay SRT/VTT subtitles onto any HTML5 video and find them online, with no server of our own.",
