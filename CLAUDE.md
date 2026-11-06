@@ -679,6 +679,13 @@ Each of these has cost real debugging time. They are handled in the code; don't 
   space that was already cancelled upstream is inserted by hand with the caret restored. Use
   `TextInput` for panel inputs rather than a bare `<input>`.
 
+  The same hostility goes further than space: some players pull focus back to themselves on
+  *every* key press, which made a text box accept one letter and then go dead. Two defences:
+  `installEarlyTypingShield` in `panel-host.ts` stops keydown/keypress/keyup for every key
+  typed into one of our boxes at the window capture phase (except Enter, Tab and Escape, which
+  the panel needs), and `TextInput` takes focus back if it is stolen without a click, Tab or
+  Escape. Verified by adding a document-level listener that focuses the `<video>` on each key.
+
 - **Entry points must not share a basename.** Rollup names each output chunk after its entry's
   basename, so `background/index.ts` and `content/index.ts` both emitted `index.ts-<hash>.js` —
   and the generated `service-worker-loader.js` bound to the *content script*. The worker then ran

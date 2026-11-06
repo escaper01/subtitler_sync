@@ -104,7 +104,7 @@ export class PanelHost {
  *
  * A capture-phase listener on `window` always fires before one on `document`, regardless of
  * when each was registered — propagation order follows the DOM tree, not registration time.
- * So this intercepts the space key up there, before the page's handler is even reached, and
+ * So this intercepts keys typed into our boxes up there, before the page's handler is reached, and
  * calls only `stopPropagation()` (never `preventDefault()`): that keeps the page from ever
  * seeing the event while leaving the browser's own default action — inserting the
  * character, then firing the native `input` event React's `onChange` listens for — intact.
@@ -112,18 +112,25 @@ export class PanelHost {
  * way.
  */
 function installEarlyTypingShield(host: HTMLElement): () => void {
-  const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== ' ') return;
+  const onKey = (event: KeyboardEvent): void => {
+    // Enter is the one key the panel's own handlers need (it runs the search), and Tab and
+    // Escape are how somebody leaves a box on purpose.
+    if (event.key === 'Enter' || event.key === 'Escape' || event.key === 'Tab') return;
     if (!event.composedPath().includes(host)) return;
 
     const target = event.composedPath()[0];
     if (!(target instanceof HTMLElement) || !/^(INPUT|TEXTAREA)$/.test(target.tagName)) return;
 
+    // Every key, not just space: a player that reacts to *any* key press (to refocus itself,
+    // or to bind `f`, `m`, `k`, `c`) must not see typing in our boxes at all.
     event.stopPropagation();
   };
 
-  window.addEventListener('keydown', onKeyDown, true);
-  return () => window.removeEventListener('keydown', onKeyDown, true);
+  const types = ['keydown', 'keypress', 'keyup'] as const;
+  for (const type of types) window.addEventListener(type, onKey, true);
+  return () => {
+    for (const type of types) window.removeEventListener(type, onKey, true);
+  };
 }
 
 /**

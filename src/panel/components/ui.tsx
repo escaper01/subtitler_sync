@@ -42,6 +42,42 @@ export function TextInput({
     caret.current = null;
   });
 
+  /**
+   * Whether the user put the caret here and has not deliberately left. Some players pull
+   * focus back to themselves on every key press, which ends typing after one letter. A blur
+   * that nobody asked for is undone; one the user caused (a click elsewhere, Tab, Escape) is
+   * left alone.
+   */
+  const wanted = useRef(false);
+
+  useEffect(() => {
+    const leave = (event: Event) => {
+      const input = ref.current;
+      if (input && !event.composedPath().includes(input)) wanted.current = false;
+    };
+    const leaveOnKey = (event: KeyboardEvent) => {
+      if (event.key === 'Tab' || event.key === 'Escape') wanted.current = false;
+    };
+    window.addEventListener('pointerdown', leave, true);
+    window.addEventListener('keydown', leaveOnKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', leave, true);
+      window.removeEventListener('keydown', leaveOnKey, true);
+    };
+  }, []);
+
+  const keepFocus = () => {
+    const input = ref.current;
+    if (!wanted.current || !input || !document.hasFocus()) return;
+    requestAnimationFrame(() => {
+      if (wanted.current && input.isConnected && input.getRootNode() instanceof ShadowRoot) {
+        if ((input.getRootNode() as ShadowRoot).activeElement !== input) {
+          input.focus({ preventScroll: true });
+        }
+      }
+    });
+  };
+
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     // Never let the player see typing, whatever the key.
     event.stopPropagation();
@@ -71,6 +107,10 @@ export function TextInput({
       onChange={(event) => onChange(event.target.value)}
       onKeyDown={onKeyDown}
       onKeyUp={(event) => event.stopPropagation()}
+      onFocus={() => {
+        wanted.current = true;
+      }}
+      onBlur={keepFocus}
       className={`rounded border border-white/10 bg-black/40 px-1.5 py-1 text-[11px] text-white/85 outline-none placeholder:text-white/25 focus:border-sky-400/60 ${className}`}
     />
   );
