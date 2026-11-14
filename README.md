@@ -158,7 +158,7 @@ The top bar holds everything that used to need two rows:
 - **−** collapses the panel to a small **CC** pill in the corner. Click the pill to bring it back.
 
 Messages such as "Loaded 1,204 lines", "Shifted by +0.40s" or an error appear as a small
-**toast** at the bottom of the panel and disappear by themselves, so they never push the content
+**toast** at the bottom right of the panel and disappear by themselves, so they never push the content
 down. The panel works in fullscreen, because it lives inside the player's own frame.
 
 The first time you open a film the panel opens by itself. When you come back to a film whose
@@ -201,8 +201,9 @@ if it is wrong and press **Search** (or Enter).
   Green is working, red is not responding, amber is "could not be checked" (for example it asked
   you to slow down). The test runs at most once every 24 hours; hover the dot for the time and
   details.
-- **Language:** the dropdown next to the search box picks the subtitle language. Changing it
-  re-runs the search.
+- **Language:** the dropdown on the **Series** header row picks the subtitle language. It is one
+  setting for every search, typed in Custom search or started by the series picker, and changing
+  it re-runs the current search.
 - **Results** are listed by *release*, which is the name of the video file somebody timed the
   subtitles against, with its download count and the language it was translated from. A subtitle
   made for the same release as your video usually needs no syncing at all, so look at the name
@@ -240,12 +241,18 @@ Fix subtitles that appear too early, too late, or slowly slip out of step.
 
 The top of the tab is a small remote for the video so you do not have to reach for the player:
 
-- A **seek bar** across the full width. Click or drag to jump to any time; the current time is on
-  its left and the duration on its right.
 - **Back**, **play/pause** and **forward** buttons. The box beside them is the number of seconds
   they skip. It starts at **1** and you can type any value (for example `0.5` or `10`).
-- Three toggles on the same row show or hide the sections below. A hidden section takes no space.
-  **Lines** and **Drift** are on by default; **Timing** is off.
+- **Skips speed up when you keep pressing.** Press back or forward again within about a second
+  and the jump grows: 1×, 2×, 5×, 10×, 20×, 30× the skip length (a small `×5` shows next to the
+  box). Stop for a moment, or change direction, and it returns to 1×.
+- A **seek bar** across the full width, with the current time on its left and the duration on its
+  right. Click or drag to jump to any time. It is hidden by default; turn it on with **Seek**.
+- Four toggles on the same row show or hide the sections: **Timing** and **Seek** on the left,
+  **Lines** and **Drift** on the right. A hidden section takes no space. **Lines** and **Drift**
+  are on by default; **Timing** and **Seek** are off.
+
+![The seek bar switched on](docs/screenshots/sync-seek.png)
 
 ### Lines
 

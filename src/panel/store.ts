@@ -31,7 +31,7 @@ import {
 import { videoKey } from '@/lib/videoKey';
 import { log } from '@/lib/log';
 
-export type SyncSection = 'timing' | 'lines' | 'drift';
+export type SyncSection = 'timing' | 'seek' | 'lines' | 'drift';
 
 /** What clicking a line in the cue list does. */
 export type ClickMode = 'quick' | 'anchorA' | 'anchorB';
@@ -221,7 +221,7 @@ export const usePanel = create<PanelState>((set, get) => ({
   notice: null,
   noticeAction: null,
 
-  syncSections: { timing: false, lines: true, drift: true },
+  syncSections: { timing: false, seek: false, lines: true, drift: true },
   toggleSyncSection(section) {
     const current = get().syncSections;
     set({ syncSections: { ...current, [section]: !current[section] } });

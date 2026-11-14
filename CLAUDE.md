@@ -340,15 +340,17 @@ wide enough. Dragging clamps against the player, so it cannot be stranded off-sc
 counts. There is one top bar (`CC`, the five tabs, the clock, collapse) and no footer; the bar's
 empty space is the drag handle, and pointer-down ignores anything inside a `<button>` so the
 tabs stay clickable. Errors and notices are **toasts**: `error` / `notice` / `noticeAction` in
-`usePanel`, rendered by `Toast` in `App.tsx`, absolutely positioned over the bottom of the panel
-so they cost no layout height, and auto-dismissed (about 3 s for a notice, 6 s for an error, 8 s
+`usePanel`, rendered by `Toast` in `App.tsx`, absolutely positioned over the bottom **right** of the panel
+(so they never cover the Drift tab's *Apply rate fix* button on the left) and cost no layout height, and auto-dismissed (about 3 s for a notice, 6 s for an error, 8 s
 when it carries an action such as *Snap to 25 fps*). Set `notice` through the store; do not add
 inline banners. Search errors inside the Find tab stay inline, next to the button that caused
 them.
 
-**The Sync tab.** A seek bar across the full width, play/pause and skip buttons (SVG icons, never
-emoji) with a skip-length box (`seekStep`, default 1 s), and chips that show or hide three
-sections: Timing (off by default), Lines and Drift (on). `syncSections` lives in the store, so
+**The Sync tab.** Play/pause and skip buttons (SVG icons, never emoji) with a skip-length box
+(`seekStep`, default 1 s), and chips that show or hide four sections: Timing and Seek (the
+full-width seek bar) are off by default, Lines and Drift are on. Pressing a skip button again
+within `BOOST_WINDOW_MS` (1.2 s) in the same direction multiplies the jump through
+`BOOST_STEPS` (1, 2, 5, 10, 20, 30); a pause or a change of direction resets it. `syncSections` lives in the store, so
 the choice survives a tab switch but not a reload. A hidden section is not rendered at all. The
 cue list is virtualised with a **fixed** `ROW_HEIGHT` (24 px, one truncated line per cue, full
 text in the tooltip); auto-height rows for two-line cues would break the scroll maths, which is
@@ -518,7 +520,9 @@ style value. `lib/donate.ts` validates it on this side, since there is no server
 fails is dropped rather than rendered dead.
 
 **Find tab layout.** Two collapsible sections, *Series* and *Custom search*, then results, then
-the status dot. Custom search collapses itself the moment a series episode becomes active (the
+the status dot. The language picker sits on the Series header row, not in Custom search: it is
+one setting (`usePanel.language`) that `runSearch` reads for every search, typed or driven by
+the series picker, and it must stay reachable when either section is collapsed. Custom search collapses itself the moment a series episode becomes active (the
 series browser is then driving the searches) and reopens when none is. Results are releases with
 a **Use** button and *Back / More* paging.
 

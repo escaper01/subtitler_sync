@@ -5,7 +5,6 @@ import { PAGE_SIZE } from '@/lib/api-types';
 import { usePanel, trackKey } from '@/panel/store';
 import { useTv } from '@/panel/tvStore';
 import { Button, TextInput } from '@/panel/components/ui';
-import { LanguagePicker } from '@/panel/components/LanguagePicker';
 import { SeriesBrowser } from '@/panel/components/SeriesBrowser';
 
 /** Matches the API's own limit, so over-long titles are rejected before a round trip. */
@@ -107,8 +106,6 @@ function SourceLine() {
  */
 function CustomSearch({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const find = usePanel((s) => s.find);
-  const language = usePanel((s) => s.language);
-  const setLanguage = usePanel((s) => s.setLanguage);
   const setQuery = usePanel((s) => s.setQuery);
   const runSearch = usePanel((s) => s.runSearch);
 
@@ -141,7 +138,6 @@ function CustomSearch({ open, onToggle }: { open: boolean; onToggle: () => void 
               maxLength={MAX_QUERY_LENGTH}
               className="min-w-0 flex-1"
             />
-            <LanguagePicker selected={language} onChange={setLanguage} />
           </div>
 
           <Button

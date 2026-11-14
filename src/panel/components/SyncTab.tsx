@@ -8,6 +8,9 @@ import { Button, TextInput, clock } from '@/panel/components/ui';
 /** One line per row, so the height is exact and there is no dead space under short cues. */
 const ROW_HEIGHT = 24;
 const OVERSCAN = 4;
+/** Skip-button acceleration: multipliers of the skip length, and how soon the next press counts. */
+const BOOST_STEPS = [1, 2, 5, 10, 20, 30];
+const BOOST_WINDOW_MS = 1200;
 /** How long to leave auto-scroll off after the user scrolls the list themselves. */
 const MANUAL_SCROLL_GRACE_MS = 4000;
 
@@ -45,6 +48,7 @@ export function SyncTab() {
 
 const SECTION_LABELS: { id: SyncSection; label: string; title: string }[] = [
   { id: 'timing', label: 'Timing', title: 'Show or hide the offset buttons' },
+  { id: 'seek', label: 'Seek', title: 'Show or hide the seek bar' },
   { id: 'lines', label: 'Lines', title: 'Show or hide the subtitle line list' },
   { id: 'drift', label: 'Drift', title: 'Show or hide the drift fix' },
 ];
@@ -66,6 +70,17 @@ function PlayerBar() {
 
   const [paused, setPaused] = useState(video?.paused ?? true);
   const [draft, setDraft] = useState(String(step));
+  /** The multiplier in force while skip buttons are being pressed in a row, or 1. */
+  const [boost, setBoost] = useState(1);
+  const streak = useRef<{ dir: 1 | -1; at: number; count: number } | null>(null);
+  const boostTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (boostTimer.current) clearTimeout(boostTimer.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!video) return;
@@ -81,8 +96,23 @@ function PlayerBar() {
 
   if (!video) return null;
 
-  const seek = (delta: number) => {
-    video.currentTime = Math.max(0, video.currentTime + delta);
+  /**
+   * Skip back or forward. Pressing the same button again within a second and a bit speeds the
+   * jump up — 1x, 2x, 5x, 10x, 20x, 30x the skip length — so crossing a long gap is a few
+   * clicks, and it drops back to 1x when you pause or change direction.
+   */
+  const skip = (dir: 1 | -1) => {
+    const now = Date.now();
+    const last = streak.current;
+    const count = last && last.dir === dir && now - last.at < BOOST_WINDOW_MS ? last.count + 1 : 0;
+    streak.current = { dir, at: now, count };
+
+    const multiplier = BOOST_STEPS[Math.min(count, BOOST_STEPS.length - 1)] ?? 1;
+    video.currentTime = Math.max(0, video.currentTime + dir * step * multiplier);
+
+    setBoost(multiplier);
+    if (boostTimer.current) clearTimeout(boostTimer.current);
+    boostTimer.current = setTimeout(() => setBoost(1), BOOST_WINDOW_MS);
   };
   const togglePlay = () => {
     if (video.paused) void video.play().catch(() => undefined);
@@ -101,7 +131,7 @@ function PlayerBar() {
         type="button"
         title={section.title}
         onClick={() => toggle(id)}
-        className={`rounded border px-1.5 py-1 text-[10px] font-medium transition-colors ${
+        className={`rounded border px-1 py-1 text-[10px] font-medium transition-colors ${
           sections[id]
             ? 'border-sky-400/50 bg-sky-500 text-white'
             : 'border-transparent text-white/60 hover:bg-white/10'
@@ -114,7 +144,8 @@ function PlayerBar() {
 
   return (
     <div className="space-y-1.5">
-      {/* Seek bar: spans the full width, so a time is one click or drag away. */}
+      {/* Seek bar: hidden until asked for. Full width, so a time is one click away. */}
+      {sections.seek && (
       <div className="flex items-center gap-2">
         <span className="w-10 shrink-0 text-right font-mono text-[10px] tabular-nums text-white/50">
           {clock(time)}
@@ -138,17 +169,21 @@ function PlayerBar() {
           {duration > 0 ? clock(duration) : '--:--'}
         </span>
       </div>
+      )}
 
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1">
-        <div className="flex justify-start gap-0.5">{chip('timing')}</div>
+        <div className="flex justify-start gap-0.5">
+          {chip('timing')}
+          {chip('seek')}
+        </div>
         <div className="flex items-center justify-center gap-1">
-        <IconButton label={`Back ${step}s`} onClick={() => seek(-step)}>
+        <IconButton label={`Back ${step}s (press repeatedly to speed up)`} onClick={() => skip(-1)}>
           <path d="M11 7 4 12l7 5V7Zm9 0-7 5 7 5V7Z" />
         </IconButton>
         <IconButton label={paused ? 'Play' : 'Pause'} onClick={togglePlay} primary>
           {paused ? <path d="M8 5v14l11-7L8 5Z" /> : <path d="M7 5h3.5v14H7V5Zm6.5 0H17v14h-3.5V5Z" />}
         </IconButton>
-        <IconButton label={`Forward ${step}s`} onClick={() => seek(step)}>
+        <IconButton label={`Forward ${step}s (press repeatedly to speed up)`} onClick={() => skip(1)}>
           <path d="m13 7 7 5-7 5V7ZM4 7l7 5-7 5V7Z" />
         </IconButton>
         <input
@@ -163,9 +198,13 @@ function PlayerBar() {
           }}
           onKeyUp={(e) => e.stopPropagation()}
           title="Seconds to skip per click"
-          className="ml-1 w-9 rounded border border-white/10 bg-black/40 px-1 py-1 text-center text-[11px] tabular-nums text-white/85 outline-none focus:border-sky-400/60"
+          className="ml-1 w-8 rounded border border-white/10 bg-black/40 px-1 py-1 text-center text-[11px] tabular-nums text-white/85 outline-none focus:border-sky-400/60"
         />
-        <span className="text-[10px] text-white/35">s</span>
+        <span
+          className={`w-5 text-[10px] tabular-nums ${boost > 1 ? 'font-medium text-sky-300' : 'text-white/35'}`}
+        >
+          {boost > 1 ? `×${boost}` : 's'}
+        </span>
         </div>
         <div className="flex justify-end gap-0.5">
           {chip('lines')}

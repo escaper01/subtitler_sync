@@ -196,7 +196,7 @@ function Toast() {
   return (
     <div
       role="status"
-      className={`absolute inset-x-2 bottom-2 z-20 flex items-center gap-2 rounded border px-2 py-1.5 text-[11px] shadow-lg backdrop-blur ${
+      className={`absolute bottom-2 right-2 z-20 flex max-w-[65%] items-center gap-2 rounded border px-2 py-1.5 text-[11px] shadow-lg backdrop-blur ${
         error
           ? 'border-red-400/40 bg-red-950/90 text-red-100'
           : 'border-sky-400/30 bg-neutral-800/95 text-sky-50'

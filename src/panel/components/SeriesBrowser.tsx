@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { Position, Season, Show } from '@/lib/tv';
 import { episodeAt, nextEpisode, previousEpisode } from '@/lib/tv';
 import { useTv } from '@/panel/tvStore';
+import { usePanel } from '@/panel/store';
+import { LanguagePicker } from '@/panel/components/LanguagePicker';
 import { Button, TextInput } from '@/panel/components/ui';
 
 /**
@@ -20,6 +22,8 @@ export function SeriesBrowser() {
   const init = useTv((s) => s.init);
   const recent = useTv((s) => s.recent);
   const show = useTv((s) => s.show);
+  const language = usePanel((s) => s.language);
+  const setLanguage = usePanel((s) => s.setLanguage);
 
   useEffect(() => {
     void init();
@@ -33,20 +37,23 @@ export function SeriesBrowser() {
 
   return (
     <div className="rounded border border-white/10 bg-black/20">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-white/5"
-      >
-        <span className="text-[9px] text-white/35">{open ? '▾' : '▸'}</span>
-        <span className="text-[11px] font-medium text-white/75">Series</span>
-        {!open && show && (
-          <span className="ml-auto max-w-40 truncate text-[10px] text-white/35">{show.name}</span>
-        )}
-        {!open && !show && (
-          <span className="ml-auto text-[10px] text-white/30">pick a season and episode</span>
-        )}
-      </button>
+      {/* The subtitle language lives here, not in Custom search: it is one setting for every
+          search, typed or driven by the series picker, so it stays reachable when either
+          section is collapsed. */}
+      <div className="flex items-center gap-1.5 pr-1.5 hover:bg-white/5">
+        <button
+          type="button"
+          onClick={() => setOpen(!open)}
+          className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1.5 text-left"
+        >
+          <span className="text-[9px] text-white/35">{open ? '▾' : '▸'}</span>
+          <span className="text-[11px] font-medium text-white/75">Series</span>
+          {!open && show && (
+            <span className="ml-auto min-w-0 truncate text-[10px] text-white/35">{show.name}</span>
+          )}
+        </button>
+        <LanguagePicker selected={language} onChange={setLanguage} />
+      </div>
 
       {open && (
         <div className="space-y-2 border-t border-white/10 px-2 py-2">
