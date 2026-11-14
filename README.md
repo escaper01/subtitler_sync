@@ -205,7 +205,9 @@ if it is wrong and press **Search** (or Enter).
   setting for every search, typed in Custom search or started by the series picker, and changing
   it re-runs the current search.
 - **Results** are listed by *release*, which is the name of the video file somebody timed the
-  subtitles against, with its download count and the language it was translated from. A subtitle
+  subtitles against. Each row shows the language of the subtitle you will get (the blue chip),
+  its download count, and the language the uploader's original was in ("original in English" is
+  normal: most subtitles on the site are translated from English). A subtitle
   made for the same release as your video usually needs no syncing at all, so look at the name
   first. Each page shows five releases; use **Back** and **More** to page through them. A release
   that failed to open gets a **Retry** button.

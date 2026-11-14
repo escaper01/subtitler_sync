@@ -278,8 +278,19 @@ function ReleaseRow({ release }: { release: Release }) {
         </span>
         <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-white/35">
           {release.recommended && <span className="text-amber-300">★</span>}
+          {/* The language of the file "Use" will load. Not the release's original language,
+              which is English for nearly every upload and read as "this subtitle is English". */}
+          {track && (
+            <span className="rounded bg-sky-500/15 px-1 text-sky-200" title="Language of this subtitle">
+              {track.name}
+            </span>
+          )}
           <span>{release.downloads.toLocaleString()} downloads</span>
-          {release.sourceLanguage && <span>· from {release.sourceLanguage}</span>}
+          {release.sourceLanguage && (
+            <span title="The language the uploader's original subtitle was in; this one was translated from it.">
+              · original in {release.sourceLanguage}
+            </span>
+          )}
         </span>
       </span>
 
